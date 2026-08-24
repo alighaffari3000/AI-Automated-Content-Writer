@@ -166,10 +166,15 @@ shape. Whether the agents write well is a question for evaluation
 
 ## Status
 
-This is the first working version. Deliberately left for later: a persistent
-fact registry with expiry, a separate source validator, five specialised
-reviewers instead of three, automatic publishing, and the weekly analyst that
-scores topics by how they actually performed.
+This is the first working version, and it works end to end: a queued topic
+produces a sourced, reviewed, human-approvable draft on a real site.
+
+The full architecture was designed before any of it was built, then cut down to
+a first version small enough to finish. What was left out — a persistent fact
+registry with expiry, a separate source validator, five specialised reviewers
+instead of three, automatic publishing, and a weekly analyst that scores topics
+by how they actually performed — is in [ROADMAP.md](ROADMAP.md), along with
+what the first live runs revealed.
 
 ## License
 
