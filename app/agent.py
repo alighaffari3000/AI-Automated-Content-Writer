@@ -450,11 +450,16 @@ def abort_run(ctx: Context, node_input: dict[str, Any]) -> Event:
 
     article_id = int(ctx.state.get("article_id", 0))
     category_id = int(ctx.state.get("category_id", 0))
+    topic_id = int(ctx.state.get("topic_id", 0))
     if article_id:
         get_store().fail_article(article_id, reason)
     # Give the turn back, so a failed run does not cost this category its slot.
     if category_id and status != "no_category":
         get_store().release_category(category_id)
+    # And un-log the subject: nothing was published, so the planner must stay
+    # free to propose it again.
+    if topic_id:
+        get_store().discard_topic(topic_id)
 
     if status != "no_category":
         build_notifier(settings.notify).send(f"Today's run stopped: {reason}")

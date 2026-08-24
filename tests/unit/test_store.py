@@ -105,6 +105,46 @@ def test_subjects_are_kept_per_area_not_pooled(store):
     ]
 
 
+def test_a_killed_run_gives_everything_back(store):
+    """A crash must not consume a category's turn or falsely log a subject."""
+    area = store.add_category("Batteries")
+    other = store.add_category("Inverters")
+
+    topic_id = store.record_topic(area, "AC versus DC coupling")
+    store.mark_category_used(area)
+    article_id = store.start_article(topic_id)
+
+    # The process dies here: no finish, no fail, no release. Make it stale.
+    with store._connect() as conn:  # noqa: SLF001
+        conn.execute(
+            "UPDATE articles SET created_at = '2026-01-01T00:00:00+00:00'"
+            " WHERE id = ?",
+            (article_id,),
+        )
+
+    assert store.recover_abandoned_runs(older_than_hours=2) == 1
+
+    assert store.next_category()["id"] == area, "the consumed turn came back"
+    assert store.topics_in_category(area) == [], "the phantom subject is un-logged"
+    with store._connect() as conn:  # noqa: SLF001
+        row = conn.execute(
+            "SELECT status, error FROM articles WHERE id = ?", (article_id,)
+        ).fetchone()
+    assert row["status"] == "failed" and "abandoned" in row["error"]
+    assert other  # silence the unused variable warning
+
+
+def test_a_genuinely_running_article_is_left_alone(store):
+    """The age guard: an overlap between cron and a manual run is not a corpse."""
+    area = store.add_category("Batteries")
+    topic_id = store.record_topic(area, "Fresh subject")
+    store.mark_category_used(area)
+    store.start_article(topic_id)
+
+    assert store.recover_abandoned_runs(older_than_hours=2) == 0
+    assert store.topics_in_category(area) != []
+
+
 def test_a_database_from_the_hand_stocked_era_keeps_its_history(tmp_path):
     """Topics used to be a queue a person filled. Those rows are history now.
 

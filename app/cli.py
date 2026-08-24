@@ -69,7 +69,22 @@ async def _run_once() -> int:
 
 def cmd_run(args: argparse.Namespace) -> int:
     try:
+        # A previous run that was killed mid-flight left its article stuck, its
+        # category's turn consumed and its topic falsely logged as covered.
+        # Recover before starting, so one crash never distorts the rotation.
+        recovered = get_store().recover_abandoned_runs()
+        if recovered:
+            logger.warning("Recovered %s abandoned run(s) from a previous crash.", recovered)
         return asyncio.run(_run_once())
+    except KeyboardInterrupt:
+        # Ctrl-C is how a person abandons a run on purpose. It is not an
+        # Exception, so without this clause it would skip every cleanup path
+        # and leave the article stuck, the category's turn consumed and the
+        # subject falsely logged. Zero hours is safe here: this process's run
+        # is the only one young enough to match.
+        recovered = get_store().recover_abandoned_runs(older_than_hours=0)
+        logger.warning("Run interrupted; rolled back %s run(s).", recovered)
+        return 130
     except Exception as exc:  # noqa: BLE001 - cron needs the reason, not a traceback
         logger.exception("The run failed.")
         build_notifier(settings.notify).send(f"Today's article run failed: {exc}")

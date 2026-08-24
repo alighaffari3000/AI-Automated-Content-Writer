@@ -242,6 +242,53 @@ class Store:
             )
             return int(cur.lastrowid or 0)
 
+    def discard_topic(self, topic_id: int) -> None:
+        """Remove a logged subject that no article ended up existing for.
+
+        The topics table is the planner's memory of what is covered. A subject
+        that was claimed and then lost to a failed run is not covered — leaving
+        it logged would make the planner avoid a perfectly good subject
+        forever.
+        """
+        with self._connect() as conn:
+            conn.execute("DELETE FROM topics WHERE id = ?", (topic_id,))
+
+    def recover_abandoned_runs(self, older_than_hours: float = 2.0) -> int:
+        """Clean up after runs that died without reaching any exit path.
+
+        A killed process — power cut, Ctrl-C, OOM — leaves an article stuck in
+        'running', a category whose turn was consumed for nothing, and a topic
+        logged that no article exists for. All three are put back. The age
+        guard keeps a genuinely in-flight run (cron overlapping a manual one)
+        from being mistaken for a corpse.
+        """
+        with self._connect() as conn:
+            stale = conn.execute(
+                "SELECT a.id, a.topic_id, t.category_id FROM articles a"
+                " LEFT JOIN topics t ON t.id = a.topic_id"
+                " WHERE a.status = 'running'"
+                "   AND datetime(a.created_at) < datetime('now', ?)",
+                (f"-{older_than_hours} hours",),
+            ).fetchall()
+            for row in stale:
+                conn.execute(
+                    "UPDATE articles SET status = 'failed',"
+                    " error = 'abandoned: the run died before finishing',"
+                    " updated_at = ? WHERE id = ?",
+                    (_now(), row["id"]),
+                )
+                if row["category_id"]:
+                    conn.execute(
+                        "UPDATE categories SET used_at = NULL,"
+                        " times_used = MAX(times_used - 1, 0) WHERE id = ?",
+                        (row["category_id"],),
+                    )
+                if row["topic_id"]:
+                    conn.execute(
+                        "DELETE FROM topics WHERE id = ?", (row["topic_id"],)
+                    )
+            return len(stale)
+
     def topics_in_category(
         self, category_id: int, limit: int = 40
     ) -> list[dict[str, Any]]:
