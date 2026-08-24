@@ -1,0 +1,127 @@
+"""The only door between the pipeline and the target site.
+
+No agent touches the site's database. Everything goes through this HTTP client,
+which means one place to authenticate, one place to log, and a site that can be
+swapped by changing environment variables.
+
+Expected endpoints, relative to `SITE_API_URL`:
+
+    POST   /posts      create a draft (or a published post once trusted)
+    GET    /products   catalogue entries the article may mention
+    GET    /articles   what is already published, for internal links
+    GET    /stats      per-article view counts (read by the weekly analyst)
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import Any
+
+import httpx
+
+from .config import SiteConfig
+from .render import markdown_to_html
+
+logger = logging.getLogger(__name__)
+
+
+class SiteClient:
+    def __init__(self, config: SiteConfig, dry_run: bool = False) -> None:
+        self.config = config
+        self.dry_run = dry_run
+
+    def _headers(self) -> dict[str, str]:
+        return {
+            "Authorization": f"Bearer {self.config.api_token}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+
+    def _url(self, path: str) -> str:
+        return f"{self.config.api_url.rstrip('/')}/{path.lstrip('/')}"
+
+    def _get(self, path: str, params: dict[str, Any] | None = None) -> Any:
+        """Read from the site. A read failure degrades the run, never kills it."""
+        if not self.config.configured:
+            logger.warning("Site API is not configured; %s returns nothing.", path)
+            return None
+        try:
+            response = httpx.get(
+                self._url(path),
+                params=params,
+                headers=self._headers(),
+                timeout=self.config.timeout_seconds,
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception as exc:  # noqa: BLE001 - any failure means "no data"
+            logger.warning("Site API GET %s failed: %s", path, exc)
+            return None
+
+    def products(self, limit: int = 50) -> list[dict[str, Any]]:
+        """Catalogue data the article may cite, straight from the site."""
+        payload = self._get("/products", {"limit": limit})
+        if isinstance(payload, dict):
+            payload = payload.get("products") or payload.get("items") or []
+        return payload if isinstance(payload, list) else []
+
+    def published_articles(self, limit: int = 30) -> list[dict[str, Any]]:
+        payload = self._get("/articles", {"limit": limit})
+        if isinstance(payload, dict):
+            payload = payload.get("articles") or payload.get("items") or []
+        return payload if isinstance(payload, list) else []
+
+    def stats(self, days: int = 30) -> list[dict[str, Any]]:
+        payload = self._get("/stats", {"days": days})
+        if isinstance(payload, dict):
+            payload = payload.get("stats") or payload.get("items") or []
+        return payload if isinstance(payload, list) else []
+
+    def create_post(
+        self,
+        *,
+        title: str,
+        slug: str,
+        excerpt: str,
+        body: str,
+        status: str = "draft",
+        meta: dict[str, Any] | None = None,
+    ) -> tuple[bool, str]:
+        """Send the article over. Returns (ok, remote id or error message).
+
+        Both forms of the body travel: Markdown as written, and HTML ready to
+        store. Sites keep one or the other, and converting here spares every
+        adopter from adding a Markdown renderer of its own.
+
+        Unlike the reads above, a failure here is reported rather than
+        swallowed: the article exists only in this pipeline until the site
+        confirms it.
+        """
+        payload = {
+            "title": title,
+            "slug": slug,
+            "excerpt": excerpt,
+            "body": body,
+            "body_html": markdown_to_html(body),
+            "status": status,
+            "meta": meta or {},
+        }
+        if self.dry_run:
+            logger.info("DRY_RUN: would create %s post %r", status, title)
+            return True, "dry-run"
+        if not self.config.configured:
+            return False, "SITE_API_URL / SITE_API_TOKEN are not set"
+        try:
+            response = httpx.post(
+                self._url("/posts"),
+                json=payload,
+                headers=self._headers(),
+                timeout=self.config.timeout_seconds,
+            )
+            response.raise_for_status()
+            data = response.json() if response.content else {}
+            remote_id = str(data.get("id") or data.get("slug") or slug)
+            return True, remote_id
+        except Exception as exc:  # noqa: BLE001 - surfaced to the caller
+            logger.error("Site API POST /posts failed: %s", exc)
+            return False, str(exc)
