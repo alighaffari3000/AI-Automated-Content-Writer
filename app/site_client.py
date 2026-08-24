@@ -51,6 +51,10 @@ class SiteClient:
                 params=params,
                 headers=self._headers(),
                 timeout=self.config.timeout_seconds,
+                # Sites redirect for their own reasons — http to https, a
+                # trailing slash. Not following turns a working endpoint into
+                # silently missing data.
+                follow_redirects=True,
             )
             response.raise_for_status()
             return response.json()
@@ -117,6 +121,7 @@ class SiteClient:
                 json=payload,
                 headers=self._headers(),
                 timeout=self.config.timeout_seconds,
+                follow_redirects=True,
             )
             response.raise_for_status()
             data = response.json() if response.content else {}
