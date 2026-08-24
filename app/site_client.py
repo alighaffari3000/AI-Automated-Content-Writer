@@ -55,6 +55,7 @@ class SiteClient:
                 # trailing slash. Not following turns a working endpoint into
                 # silently missing data.
                 follow_redirects=True,
+                verify=self.config.verify_tls,
             )
             response.raise_for_status()
             return response.json()
@@ -122,6 +123,7 @@ class SiteClient:
                 headers=self._headers(),
                 timeout=self.config.timeout_seconds,
                 follow_redirects=True,
+                verify=self.config.verify_tls,
             )
             response.raise_for_status()
             data = response.json() if response.content else {}

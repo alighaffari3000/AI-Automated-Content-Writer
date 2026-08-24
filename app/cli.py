@@ -123,20 +123,43 @@ def cmd_topics_add(args: argparse.Namespace) -> int:
 
 
 def cmd_topics_list(args: argparse.Namespace) -> int:
+    """The bank, in the order it will be written — next one first."""
     store = get_store()
     with store._connect() as conn:  # noqa: SLF001 - a CLI reading its own store
         rows = conn.execute(
-            "SELECT id, title, status, priority, score FROM topics"
-            " ORDER BY status, priority DESC, id"
+            "SELECT id, title, status, priority, score, times_used, used_at"
+            " FROM topics"
+            " ORDER BY status = 'paused', times_used ASC,"
+            "          used_at IS NOT NULL, used_at ASC,"
+            "          priority DESC, score DESC, id ASC"
         ).fetchall()
     if not rows:
-        print("No topics yet. Add one with: python -m app.cli topics add \"...\"")
+        print('No topics yet. Add one with: python -m app.cli topics add "..."')
         return 0
-    for row in rows:
+
+    print(f"{len(rows)} topic(s) in the bank, next to be written first:\n")
+    for position, row in enumerate(rows, start=1):
+        marker = "  " if row["status"] == "paused" else ("->" if position == 1 else "  ")
+        last = (row["used_at"] or "never")[:10]
         print(
-            f"#{row['id']:<4} {row['status']:<8} p{row['priority']:<3} "
-            f"score {row['score']:<5} {row['title']}"
+            f"{marker} #{row['id']:<4} {row['status']:<7} p{row['priority']:<3} "
+            f"written {row['times_used']:<3} last {last:<11} {row['title']}"
         )
+    return 0
+
+
+def cmd_topics_pause(args: argparse.Namespace) -> int:
+    """Take a topic out of rotation without deleting it."""
+    status = "active" if args.resume else "paused"
+    store = get_store()
+    with store._connect() as conn:  # noqa: SLF001 - a CLI writing its own store
+        changed = conn.execute(
+            "UPDATE topics SET status = ? WHERE id = ?", (status, args.id)
+        ).rowcount
+    if not changed:
+        print(f"No topic with id {args.id}.")
+        return 1
+    print(f"topic #{args.id} is now {status}")
     return 0
 
 
@@ -167,9 +190,17 @@ def main(argv: list[str] | None = None) -> int:
     add.add_argument("--priority", type=int, default=0, help="higher runs sooner")
     add.set_defaults(func=cmd_topics_add)
 
-    topics_sub.add_parser("list", help="show the queue", parents=[common]).set_defaults(
-        func=cmd_topics_list
+    topics_sub.add_parser(
+        "list", help="show the bank in writing order", parents=[common]
+    ).set_defaults(func=cmd_topics_list)
+
+    pause = topics_sub.add_parser(
+        "pause", help="take a topic out of rotation (it is never deleted)",
+        parents=[common],
     )
+    pause.add_argument("id", type=int)
+    pause.add_argument("--resume", action="store_true", help="put it back in rotation")
+    pause.set_defaults(func=cmd_topics_pause)
 
     args = parser.parse_args(argv)
     _setup_logging(args.verbose)

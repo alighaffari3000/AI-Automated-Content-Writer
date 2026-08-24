@@ -53,6 +53,13 @@ class SiteConfig:
     timeout_seconds: float = field(
         default_factory=lambda: _env_float("SITE_API_TIMEOUT", 30.0)
     )
+    # Off only for a site not yet on a real certificate — an IP address with a
+    # self-signed one, typically during setup. It means the token travels
+    # without a verified peer at the other end, so turn it back on the day the
+    # site gets a domain.
+    verify_tls: bool = field(
+        default_factory=lambda: _env_bool("SITE_API_VERIFY_TLS", True)
+    )
 
     @property
     def configured(self) -> bool:

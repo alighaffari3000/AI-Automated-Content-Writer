@@ -105,10 +105,13 @@ def load_run_context(ctx: Context, node_input: Any) -> Event:
     products = site.products()
     articles = site.published_articles()
     recent = store.recent_titles()
+    previous = store.articles_for_topic(topic["id"])
 
     logger.info(
-        "Run started: topic=%r article_id=%s products=%s published=%s",
+        "Run started: topic=%r (written %s time(s) before) article_id=%s "
+        "products=%s published=%s",
         topic["title"],
+        len(previous),
         article_id,
         len(products),
         len(articles),
@@ -125,6 +128,9 @@ def load_run_context(ctx: Context, node_input: Any) -> Event:
             "site_products": _as_json(products) if products else "(none available)",
             "site_articles": _as_json(
                 [a.get("title", "") for a in articles] + recent
+            ),
+            "previous_on_this_topic": (
+                _as_json(previous) if previous else "(nothing yet — this is the first)"
             ),
             "round_number": 0,
             "revision_directive": "",

@@ -22,9 +22,10 @@ CREATE TABLE IF NOT EXISTS topics (
     title         TEXT    NOT NULL UNIQUE,
     notes         TEXT    NOT NULL DEFAULT '',
     keywords      TEXT    NOT NULL DEFAULT '',
-    status        TEXT    NOT NULL DEFAULT 'queued',
+    status        TEXT    NOT NULL DEFAULT 'active',
     priority      INTEGER NOT NULL DEFAULT 0,
     score         REAL    NOT NULL DEFAULT 0,
+    times_used    INTEGER NOT NULL DEFAULT 0,
     created_at    TEXT    NOT NULL,
     used_at       TEXT
 );
@@ -72,6 +73,24 @@ class Store:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as conn:
             conn.executescript(SCHEMA)
+            self._migrate(conn)
+
+    @staticmethod
+    def _migrate(conn: sqlite3.Connection) -> None:
+        """Bring a database made by an earlier version up to date."""
+        columns = {r["name"] for r in conn.execute("PRAGMA table_info(topics)")}
+        if "times_used" not in columns:
+            conn.execute(
+                "ALTER TABLE topics ADD COLUMN times_used INTEGER NOT NULL DEFAULT 0"
+            )
+            # Topics used to be consumed once and marked 'used'. They now cycle,
+            # so that state becomes "written once already, go to the back".
+            conn.execute(
+                "UPDATE topics SET times_used = 1 WHERE status = 'used'"
+            )
+        conn.execute(
+            "UPDATE topics SET status = 'active' WHERE status IN ('queued', 'used')"
+        )
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
@@ -107,28 +126,58 @@ class Store:
             return int(row["id"]) if row else 0
 
     def next_topic(self) -> dict[str, Any] | None:
-        """The topic to write today: hand-picked priority first, then score."""
+        """The topic to write today.
+
+        The bank is permanent: a topic is never consumed, it just goes to the
+        back of the queue. Fewest-times-written comes first, so every topic is
+        covered once before any is covered twice — a rule that holds however
+        close together the runs happen, which ordering by timestamp alone does
+        not. Then oldest-first, then priority, then score.
+
+        A topic switched off by hand (`status = 'paused'`) is skipped without
+        being removed.
+        """
         with self._connect() as conn:
             row = conn.execute(
-                "SELECT * FROM topics WHERE status = 'queued'"
-                " ORDER BY priority DESC, score DESC, id ASC LIMIT 1"
+                "SELECT * FROM topics WHERE status <> 'paused'"
+                " ORDER BY times_used ASC, used_at IS NOT NULL, used_at ASC,"
+                "          priority DESC, score DESC, id ASC LIMIT 1"
             ).fetchone()
             return dict(row) if row else None
 
     def mark_topic_used(self, topic_id: int) -> None:
+        """Send a topic to the back of the queue. It is never removed."""
         with self._connect() as conn:
             conn.execute(
-                "UPDATE topics SET status = 'used', used_at = ? WHERE id = ?",
+                "UPDATE topics SET used_at = ?, times_used = times_used + 1"
+                " WHERE id = ?",
                 (_now(), topic_id),
             )
 
     def release_topic(self, topic_id: int) -> None:
-        """Put a topic back in the queue after a failed run."""
+        """Undo a claim after a failed run, so the topic comes up again next."""
         with self._connect() as conn:
             conn.execute(
-                "UPDATE topics SET status = 'queued', used_at = NULL WHERE id = ?",
+                "UPDATE topics SET used_at = NULL,"
+                " times_used = MAX(times_used - 1, 0) WHERE id = ?",
                 (topic_id,),
             )
+
+    def articles_for_topic(self, topic_id: int, limit: int = 10) -> list[dict[str, Any]]:
+        """What this pipeline already published on this topic.
+
+        The bank cycles, so a topic comes back around. The writer needs to know
+        what was said last time — otherwise the second article on a subject is
+        the first one again, in different words.
+        """
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT title, excerpt, created_at FROM articles"
+                " WHERE topic_id = ? AND title <> '' AND status = 'draft_sent'"
+                " ORDER BY id DESC LIMIT ?",
+                (topic_id, limit),
+            ).fetchall()
+            return [dict(r) for r in rows]
 
     def recent_titles(self, limit: int = 40) -> list[str]:
         """Titles already written, so the planner does not repeat itself."""

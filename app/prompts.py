@@ -40,6 +40,15 @@ Today's topic:
   notes: {{topic_notes?}}
   keywords: {{topic_keywords?}}
 
+The topic bank is permanent and cycles, so subjects come back around. What this
+pipeline already published on this same topic:
+{{previous_on_this_topic?}}
+
+If that list is not empty, this article must stand on its own next to those: a
+different angle, a narrower question, an update where the facts have moved, or
+the part the earlier articles left out. Research accordingly — a second piece
+that restates the first is worse than no piece at all.
+
 Context from the site you are writing for:
   catalogue entries (authoritative for anything about these products):
 {{site_products?}}
@@ -73,9 +82,13 @@ Topic: {{topic_title}}
 
 {FACT_RULE}
 
+Already published by this pipeline on the same topic:
+{{previous_on_this_topic?}}
+
 Produce:
 - angle: the specific argument or perspective this article takes, in one
-  sentence. Not a restatement of the title.
+  sentence. Not a restatement of the title, and clearly distinct from anything
+  in the list above.
 - outline: the section headings in order, {content.min_words}-{content.max_words}
   words of article in total.
 - target_keywords: the search terms this article should answer.
