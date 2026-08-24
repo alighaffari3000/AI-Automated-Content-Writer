@@ -54,7 +54,20 @@ class ArticleDraft(BaseModel):
     title: str
     slug: str = Field(description="URL-safe ASCII slug, lowercase, hyphens.")
     excerpt: str = Field(description="One-paragraph summary for listings and meta.")
-    body: str = Field(description="Full article in Markdown.")
+    body: str = Field(
+        description=(
+            "Full article in Markdown. Mark where a picture belongs with "
+            "[[IMAGE: what it shows | alt text]] on its own line."
+        )
+    )
+    featured_image_prompt: str = Field(
+        default="",
+        description="What the lead image should show, described for an image model.",
+    )
+    featured_image_alt: str = Field(
+        default="",
+        description="Alt text for the lead image, in the article's language.",
+    )
     used_fact_ids: list[str] = Field(
         default_factory=list,
         description="Every fact_id this draft relies on.",

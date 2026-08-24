@@ -10,7 +10,7 @@ state — nothing about a particular company belongs in this file.
 
 from __future__ import annotations
 
-from .config import ContentConfig
+from .config import ContentConfig, ImageConfig
 
 SCORING_RULE = """
 Score 0-10, and calibrate. A competent, publishable draft with nothing seriously
@@ -103,7 +103,7 @@ and do not upgrade a weak source to make a claim usable.
 """.strip()
 
 
-def writer_instruction(content: ContentConfig) -> str:
+def writer_instruction(content: ContentConfig, images: ImageConfig) -> str:
     return f"""
 Write the article in {content.language_name}. Tone: {content.tone}. Audience:
 {content.audience}. Length: {content.min_words}-{content.max_words} words.
@@ -133,6 +133,27 @@ Hard rules:
   English.
 - body is Markdown: a short opening that states what the reader will get,
   headings from the outline, and a close that does not oversell.
+
+Illustration:
+- Describe the lead image in featured_image_prompt — what a photograph of this
+  article's subject would show. Concrete and physical (the equipment, the
+  setting, the scale), not abstract. Write featured_image_alt in
+  {content.language_name}, describing the picture for someone who cannot see it.
+- Place up to {images.max_in_body} images inside the body, each on its own line
+  where it earns its place — beside the section it illustrates, never decorating
+  the opening or padding the end:
+
+      [[IMAGE: what the picture shows, described for an image model | alt text]]
+
+  The description before the pipe is in English and is instructions to an image
+  model. The alt text after the pipe is in {content.language_name} and is for a
+  reader.
+- Ask for pictures of real things: equipment in place, an installation, a
+  component in use. Do not ask for charts, diagrams, numbers, labels or any
+  image containing text — an image model writes text badly, and a wrong number
+  in a picture is a wrong claim in the article.
+- Fewer good images beat more weak ones. An article that genuinely needs only
+  the lead image should have only that.
 """.strip()
 
 

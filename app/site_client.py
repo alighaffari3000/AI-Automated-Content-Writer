@@ -14,6 +14,7 @@ Expected endpoints, relative to `SITE_API_URL`:
 
 from __future__ import annotations
 
+import base64
 import logging
 from typing import Any
 
@@ -82,6 +83,40 @@ class SiteClient:
             payload = payload.get("stats") or payload.get("items") or []
         return payload if isinstance(payload, list) else []
 
+    def upload_image(
+        self, data: bytes, filename: str, alt: str = ""
+    ) -> str | None:
+        """Put one picture in the site's media library, return its URL.
+
+        Base64 in JSON rather than multipart: one content type for the whole
+        API, and an article's worth of images is small enough that the encoding
+        overhead is not worth a second code path.
+        """
+        if self.dry_run:
+            logger.info("DRY_RUN: would upload image %s (%s bytes)", filename, len(data))
+            return f"/uploads/dry-run-{filename}"
+        if not self.config.configured:
+            return None
+        try:
+            response = httpx.post(
+                self._url("/media"),
+                json={
+                    "filename": filename,
+                    "alt": alt,
+                    "data_base64": base64.b64encode(data).decode("ascii"),
+                },
+                headers=self._headers(),
+                timeout=max(self.config.timeout_seconds, 60.0),
+                follow_redirects=True,
+                verify=self.config.verify_tls,
+            )
+            response.raise_for_status()
+            url = str(response.json().get("path") or "")
+            return url or None
+        except Exception as exc:  # noqa: BLE001 - an article beats an illustration
+            logger.warning("Image upload failed for %s: %s", filename, exc)
+            return None
+
     def create_post(
         self,
         *,
@@ -90,6 +125,7 @@ class SiteClient:
         excerpt: str,
         body: str,
         status: str = "draft",
+        featured_image: str = "",
         meta: dict[str, Any] | None = None,
     ) -> tuple[bool, str]:
         """Send the article over. Returns (ok, remote id or error message).
@@ -109,6 +145,7 @@ class SiteClient:
             "body": body,
             "body_html": markdown_to_html(body),
             "status": status,
+            "featured_image": featured_image,
             "meta": meta or {},
         }
         if self.dry_run:

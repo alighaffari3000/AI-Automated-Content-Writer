@@ -36,6 +36,7 @@ from google.genai import types
 
 from . import prompts
 from .config import settings
+from .images import ImageGenerator, ImageRequest, find_markers, replace_markers
 from .notify import build_notifier
 from .rules import evaluate_reviews
 from .schemas import (
@@ -238,6 +239,58 @@ def evaluate_gate(ctx: Context, node_input: dict[str, Any]) -> Event:
     )
 
 
+def illustrate(draft: ArticleDraft) -> tuple[str, str]:
+    """Make the article's pictures and put them where they belong.
+
+    Runs once, after the gate has approved — never during a revision round,
+    where every picture would be paid for and then thrown away.
+
+    Returns the body with images in place, and the lead image's URL. Both
+    degrade quietly: a failed picture leaves an article with one fewer, which
+    is a far better outcome than no article.
+    """
+    if not settings.images.enabled:
+        return replace_markers(draft.body, []), ""
+
+    site = get_site()
+    generator = ImageGenerator(settings.images)
+    stem = draft.slug or "article"
+
+    featured_url = ""
+    if draft.featured_image_prompt:
+        image = generator.generate(
+            ImageRequest(draft.featured_image_prompt, draft.featured_image_alt)
+        )
+        if image:
+            featured_url = (
+                site.upload_image(
+                    image.data, f"{stem}-lead{image.extension}", draft.featured_image_alt
+                )
+                or ""
+            )
+
+    requests = find_markers(draft.body)[: settings.images.max_in_body]
+    urls: list[str | None] = []
+    for index, request in enumerate(requests, start=1):
+        image = generator.generate(request)
+        if image is None:
+            urls.append(None)
+            continue
+        urls.append(
+            site.upload_image(image.data, f"{stem}-{index}{image.extension}", request.alt)
+        )
+
+    made = sum(1 for u in urls if u)
+    logger.info(
+        "Illustration: lead=%s, %s of %s in-body image(s) placed.",
+        "yes" if featured_url else "no",
+        made,
+        len(requests),
+    )
+    # Any marker past the cap is dropped rather than published as literal text.
+    return replace_markers(draft.body, urls), featured_url
+
+
 def finalize(ctx: Context, node_input: dict[str, Any]) -> Event:
     """Send the draft to the site, record the outcome, tell a human.
 
@@ -264,24 +317,32 @@ def finalize(ctx: Context, node_input: dict[str, Any]) -> Event:
             ),
         )
 
+    illustrated_body, featured_url = illustrate(draft)
+
     ok, remote = get_site().create_post(
         title=draft.title,
         slug=draft.slug,
         excerpt=draft.excerpt,
-        body=draft.body,
+        body=illustrated_body,
         status="draft",
+        featured_image=featured_url,
         meta={
             "generated_by": "ai-content-writer",
             "verdict": verdict,
             "rounds": round_number,
             "average_score": decision.get("average_score"),
             "used_fact_ids": draft.used_fact_ids,
+            "featured_image_alt": draft.featured_image_alt,
         },
     )
 
+    stored = draft.model_dump()
+    stored["body"] = illustrated_body
+    stored["featured_image"] = featured_url
+
     store.finish_article(
         article_id,
-        draft=draft.model_dump(),
+        draft=stored,
         status="draft_sent" if ok else "send_failed",
         verdict=verdict,
         rounds=round_number,
@@ -370,7 +431,7 @@ def build_writer() -> LlmAgent:
     return LlmAgent(
         name="writer",
         model=_model(settings.models.author),
-        instruction=prompts.writer_instruction(settings.content),
+        instruction=prompts.writer_instruction(settings.content, settings.images),
         output_schema=ArticleDraft,
         output_key="draft",
     )

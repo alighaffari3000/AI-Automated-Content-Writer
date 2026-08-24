@@ -101,6 +101,24 @@ class QualityConfig:
 
 
 @dataclass(frozen=True)
+class ImageConfig:
+    """Pictures for the article: one lead image plus a few in the body."""
+
+    enabled: bool = field(default_factory=lambda: _env_bool("IMAGES_ENABLED", True))
+    model: str = field(default_factory=lambda: _env("IMAGE_MODEL", "gemini-3.1-flash-image"))
+    style: str = field(
+        default_factory=lambda: _env(
+            "IMAGE_STYLE",
+            "clean editorial photography, natural daylight, realistic equipment, "
+            "uncluttered composition, muted professional colour palette",
+        )
+    )
+    # A ceiling, not a target: each picture costs a call, and an article
+    # wallpapered in generated images looks worse than one with two good ones.
+    max_in_body: int = field(default_factory=lambda: _env_int("IMAGE_MAX_IN_BODY", 3))
+
+
+@dataclass(frozen=True)
 class NotifyConfig:
     telegram_token: str = field(default_factory=lambda: _env("TELEGRAM_BOT_TOKEN"))
     telegram_chat_id: str = field(default_factory=lambda: _env("TELEGRAM_CHAT_ID"))
@@ -116,6 +134,7 @@ class Settings:
     site: SiteConfig = field(default_factory=SiteConfig)
     content: ContentConfig = field(default_factory=ContentConfig)
     quality: QualityConfig = field(default_factory=QualityConfig)
+    images: ImageConfig = field(default_factory=ImageConfig)
     notify: NotifyConfig = field(default_factory=NotifyConfig)
     db_path: str = field(default_factory=lambda: _env("DB_PATH", "data/pipeline.db"))
     dry_run: bool = field(default_factory=lambda: _env_bool("DRY_RUN", False))
