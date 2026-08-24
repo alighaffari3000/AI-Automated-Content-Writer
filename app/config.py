@@ -85,6 +85,10 @@ class ContentConfig:
     )
     min_words: int = field(default_factory=lambda: _env_int("CONTENT_MIN_WORDS", 700))
     max_words: int = field(default_factory=lambda: _env_int("CONTENT_MAX_WORDS", 1200))
+    # The site's point of view. Content marketing is allowed to advocate — what
+    # it cannot do is contradict its own sources, because a reader who follows
+    # bad advice and gets burned is a customer lost for good.
+    stance: str = field(default_factory=lambda: _env("CONTENT_STANCE"))
 
 
 @dataclass(frozen=True)

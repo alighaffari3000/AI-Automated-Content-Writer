@@ -19,6 +19,8 @@ def test_every_stage_is_present():
     names = node_names()
     for expected in (
         "load_run_context",
+        "topic_planner",
+        "open_article",
         "researcher",
         "fact_builder",
         "persist_registry",
@@ -59,6 +61,16 @@ def test_revision_returns_to_the_writer_through_the_judge():
         if edge.from_node.name == "judge"
     }
     assert judge_targets == {"writer"}
+
+
+def test_the_subject_is_invented_before_any_research_happens():
+    """A person defines the category; the planner decides what to write in it."""
+    edges = {
+        (edge.from_node.name, edge.to_node.name) for edge in root_agent.graph.edges
+    }
+    assert ("load_run_context", "topic_planner") in edges
+    assert ("topic_planner", "open_article") in edges
+    assert ("open_article", "researcher") in edges
 
 
 def test_the_gate_and_the_reviewer_agree_on_the_seo_reviewer_name():

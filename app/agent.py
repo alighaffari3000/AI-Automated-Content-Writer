@@ -44,6 +44,7 @@ from .schemas import (
     ResearchBundle,
     ReviewResult,
     RevisionDirective,
+    TopicProposal,
 )
 from .site_client import SiteClient
 from .store import Store
@@ -79,62 +80,111 @@ def _as_json(value: Any) -> str:
 
 
 def load_run_context(ctx: Context, node_input: Any) -> Event:
-    """Pick today's topic and pull the site's own data before any model runs.
+    """Choose whose turn it is, and gather everything the planner needs.
 
-    The catalogue and the archive are fetched here, deterministically, rather
-    than handed to an agent as tools: a reviewer that can be told what a product
-    costs cannot hallucinate what it costs, and the search-grounded researcher
-    keeps its one built-in tool.
+    Only the category is decided here, and deterministically — the subject of
+    the article itself is invented a step later. Picking by fewest-articles
+    -written keeps coverage even across subject areas instead of drifting
+    toward whichever one is easiest to write about.
+
+    The catalogue and the archive are fetched here rather than handed to an
+    agent as tools: a reviewer that can be told what a product costs cannot
+    hallucinate what it costs, and the search-grounded researcher keeps its one
+    built-in tool.
     """
     store = get_store()
     site = get_site()
 
-    topic = store.next_topic()
-    if topic is None:
+    category = store.next_category()
+    if category is None:
         return Event(
-            output={"status": "no_topic"},
-            route="no_topic",
+            output={"status": "no_category"},
+            route="no_category",
             content=types.Content(
                 role="model",
-                parts=[types.Part.from_text(text="The topic queue is empty.")],
+                parts=[
+                    types.Part.from_text(
+                        text="No subject areas are defined; nothing to write about."
+                    )
+                ],
             ),
         )
 
-    article_id = store.start_article(topic["id"])
-    store.mark_topic_used(topic["id"])
-
     products = site.products()
     articles = site.published_articles()
+    taxonomy = site.taxonomy()
     recent = store.recent_titles()
-    previous = store.articles_for_topic(topic["id"])
+    covered = store.topics_in_category(category["id"])
 
     logger.info(
-        "Run started: topic=%r (written %s time(s) before) article_id=%s "
-        "products=%s published=%s",
-        topic["title"],
-        len(previous),
-        article_id,
+        "Run started: category=%r (%s article(s) so far) products=%s published=%s",
+        category["name"],
+        category["times_used"],
         len(products),
         len(articles),
     )
 
     return Event(
-        output={"topic": topic["title"], "article_id": article_id},
+        output={"category": category["name"]},
+        route="ok",
         state={
-            "article_id": article_id,
-            "topic_id": topic["id"],
-            "topic_title": topic["title"],
-            "topic_notes": topic["notes"],
-            "topic_keywords": topic["keywords"],
+            "category_id": category["id"],
+            "category_name": category["name"],
+            "category_description": category["description"],
+            "category_audience": category["audience"],
+            "topics_in_category": (
+                _as_json(covered) if covered else "(nothing covered here yet)"
+            ),
             "site_products": _as_json(products) if products else "(none available)",
             "site_articles": _as_json(
                 [a.get("title", "") for a in articles] + recent
             ),
-            "previous_on_this_topic": (
-                _as_json(previous) if previous else "(nothing yet — this is the first)"
+            "site_taxonomy": (
+                _as_json(taxonomy)
+                if taxonomy["categories"]
+                else "(the site reported no categories; leave category empty)"
             ),
             "round_number": 0,
             "revision_directive": "",
+        },
+    )
+
+
+def open_article(ctx: Context, node_input: Any) -> Event:
+    """Record the subject the planner invented and start an article for it."""
+    proposal = ctx.state.get("topic_proposal") or {}
+    title = str(proposal.get("title", "")).strip()
+    category_id = int(ctx.state.get("category_id", 0))
+
+    if not title:
+        return Event(
+            output={"status": "no_topic"},
+            route="no_topic",
+            content=types.Content(
+                role="model",
+                parts=[types.Part.from_text(text="The planner proposed no subject.")],
+            ),
+        )
+
+    store = get_store()
+    keywords = ", ".join(proposal.get("keywords") or [])
+    topic_id = store.record_topic(
+        category_id, title, str(proposal.get("angle", "")), keywords
+    )
+    store.mark_category_used(category_id)
+    article_id = store.start_article(topic_id)
+
+    logger.info("Today's subject: %r (article_id=%s)", title, article_id)
+
+    return Event(
+        output={"topic": title, "article_id": article_id},
+        route="ok",
+        state={
+            "article_id": article_id,
+            "topic_id": topic_id,
+            "topic_title": title,
+            "topic_notes": str(proposal.get("angle", "")),
+            "topic_keywords": keywords,
         },
     )
 
@@ -326,6 +376,8 @@ def finalize(ctx: Context, node_input: dict[str, Any]) -> Event:
         body=illustrated_body,
         status="draft",
         featured_image=featured_url,
+        category=draft.category,
+        tags=draft.tags,
         meta={
             "generated_by": "ai-content-writer",
             "verdict": verdict,
@@ -383,19 +435,24 @@ def abort_run(ctx: Context, node_input: dict[str, Any]) -> Event:
     """Nothing to write, or nothing worth writing from. Say so and stop."""
     status = str((node_input or {}).get("status", "aborted"))
     reasons = {
-        "no_topic": "No queued topic — add one before the next run.",
+        "no_category": (
+            "No subject areas are defined. Add one with "
+            "`python -m app.cli categories add \"...\"`."
+        ),
+        "no_topic": "The planner proposed no subject for this category.",
         "no_facts": "Research found no source solid enough to write from.",
     }
     reason = reasons.get(status, "The run stopped early.")
 
     article_id = int(ctx.state.get("article_id", 0))
-    topic_id = int(ctx.state.get("topic_id", 0))
+    category_id = int(ctx.state.get("category_id", 0))
     if article_id:
         get_store().fail_article(article_id, reason)
-    if topic_id:
-        get_store().release_topic(topic_id)
+    # Give the turn back, so a failed run does not cost this category its slot.
+    if category_id and status != "no_category":
+        get_store().release_category(category_id)
 
-    if status != "no_topic":
+    if status != "no_category":
         build_notifier(settings.notify).send(f"Today's run stopped: {reason}")
     logger.warning("Run aborted (%s): %s", status, reason)
     return Event(
@@ -405,6 +462,17 @@ def abort_run(ctx: Context, node_input: dict[str, Any]) -> Event:
 
 
 # -------------------------------------------------------------------- agents
+
+
+def build_topic_planner() -> LlmAgent:
+    """Invents today's subject inside the category whose turn it is."""
+    return LlmAgent(
+        name="topic_planner",
+        model=_model(settings.models.worker),
+        instruction=prompts.topic_planner_instruction(settings.content),
+        output_schema=TopicProposal,
+        output_key="topic_proposal",
+    )
 
 
 def build_researcher() -> LlmAgent:
@@ -483,6 +551,7 @@ def build_judge() -> LlmAgent:
 
 
 def build_pipeline() -> Workflow:
+    topic_planner = build_topic_planner()
     researcher = build_researcher()
     fact_builder = build_fact_builder()
     writer = build_writer()
@@ -498,7 +567,9 @@ def build_pipeline() -> Workflow:
         ),
         edges=[
             ("START", load_run_context),
-            (load_run_context, {DEFAULT_ROUTE: researcher, "no_topic": abort_run}),
+            (load_run_context, {"ok": topic_planner, "no_category": abort_run}),
+            (topic_planner, open_article),
+            (open_article, {"ok": researcher, "no_topic": abort_run}),
             (researcher, fact_builder),
             (fact_builder, persist_registry),
             (persist_registry, {"ok": writer, "no_facts": abort_run}),

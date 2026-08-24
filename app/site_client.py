@@ -77,6 +77,20 @@ class SiteClient:
             payload = payload.get("articles") or payload.get("items") or []
         return payload if isinstance(payload, list) else []
 
+    def taxonomy(self) -> dict[str, list[dict[str, Any]]]:
+        """The categories and tags this site already uses.
+
+        The writer picks from these rather than inventing its own: a pipeline
+        coining new sections would quietly reorganise someone's navigation.
+        """
+        payload = self._get("/taxonomy")
+        if not isinstance(payload, dict):
+            return {"categories": [], "tags": []}
+        return {
+            "categories": payload.get("categories") or [],
+            "tags": payload.get("tags") or [],
+        }
+
     def stats(self, days: int = 30) -> list[dict[str, Any]]:
         payload = self._get("/stats", {"days": days})
         if isinstance(payload, dict):
@@ -126,6 +140,8 @@ class SiteClient:
         body: str,
         status: str = "draft",
         featured_image: str = "",
+        category: str = "",
+        tags: list[str] | None = None,
         meta: dict[str, Any] | None = None,
     ) -> tuple[bool, str]:
         """Send the article over. Returns (ok, remote id or error message).
@@ -146,6 +162,8 @@ class SiteClient:
             "body_html": markdown_to_html(body),
             "status": status,
             "featured_image": featured_image,
+            "category": category,
+            "tags": tags or [],
             "meta": meta or {},
         }
         if self.dry_run:

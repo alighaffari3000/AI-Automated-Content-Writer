@@ -15,6 +15,28 @@ Severity = Literal["critical", "major", "minor"]
 Verdict = Literal["APPROVE", "REVISE", "ESCALATE"]
 
 
+class TopicProposal(BaseModel):
+    """The subject of today's article, invented rather than picked off a list.
+
+    A person defines the category; what specifically to write inside it is
+    decided per run, against what the site has already published.
+    """
+
+    title: str = Field(
+        description="The working title, in the article's language. Specific, not a category name."
+    )
+    angle: str = Field(
+        description="What this article argues or answers that a general piece would not."
+    )
+    keywords: list[str] = Field(
+        default_factory=list, description="Search terms this article should answer."
+    )
+    why_now: str = Field(
+        default="",
+        description="Why this subject rather than the others available in the category.",
+    )
+
+
 class Fact(BaseModel):
     """One verifiable claim the writer is allowed to use.
 
@@ -67,6 +89,14 @@ class ArticleDraft(BaseModel):
     featured_image_alt: str = Field(
         default="",
         description="Alt text for the lead image, in the article's language.",
+    )
+    category: str = Field(
+        default="",
+        description="Slug of the site category this belongs in. Must be one that exists.",
+    )
+    tags: list[str] = Field(
+        default_factory=list,
+        description="Two to five tags, reusing the site's existing ones where they fit.",
     )
     used_fact_ids: list[str] = Field(
         default_factory=list,

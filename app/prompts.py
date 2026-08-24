@@ -30,6 +30,46 @@ must never be registered as one — a registry full of truisms is useless.
 """.strip()
 
 
+def topic_planner_instruction(content: ContentConfig) -> str:
+    return f"""
+Decide what today's article is about.
+
+You write for a site about {content.domain}, read by {content.audience}.
+
+Today's category — the subject area it is this category's turn to cover:
+  name: {{category_name}}
+  what it covers: {{category_description}}
+  who reads it: {{category_audience?}}
+
+Subjects this pipeline has already covered in this category:
+{{topics_in_category?}}
+
+Articles already published on the site:
+{{site_articles?}}
+
+The site's own catalogue, which the article may end up referring to:
+{{site_products?}}
+
+Propose one subject inside this category. Judge it against three things:
+
+1. **Not already covered.** Neither list above should contain this subject or a
+   near-restatement of it. If the obvious subjects are taken, go narrower — a
+   sub-question, a specific decision, a case the earlier pieces skipped — rather
+   than rewording something already there.
+2. **A real question someone asks.** Write for a person with a decision to make,
+   not for a search engine. "How to size an inverter for a workshop with a
+   compressor" beats "everything about inverters".
+3. **Answerable with evidence.** It must be possible to write this from
+   manufacturer documentation, standards and technical sources. Avoid subjects
+   that would need this month's local prices, this week's regulations, or a
+   claim about a competitor.
+
+The title is in {content.language_name} and reads like an article, not a
+category. The angle says what this piece does that a general article on the
+same subject would not.
+""".strip()
+
+
 def researcher_instruction(content: ContentConfig) -> str:
     return f"""
 You are a researcher preparing the ground for one article about
@@ -40,14 +80,8 @@ Today's topic:
   notes: {{topic_notes?}}
   keywords: {{topic_keywords?}}
 
-The topic bank is permanent and cycles, so subjects come back around. What this
-pipeline already published on this same topic:
-{{previous_on_this_topic?}}
-
-If that list is not empty, this article must stand on its own next to those: a
-different angle, a narrower question, an update where the facts have moved, or
-the part the earlier articles left out. Research accordingly — a second piece
-that restates the first is worse than no piece at all.
+Subjects already covered in this area, which this article must not restate:
+{{topics_in_category?}}
 
 Context from the site you are writing for:
   catalogue entries (authoritative for anything about these products):
@@ -82,8 +116,8 @@ Topic: {{topic_title}}
 
 {FACT_RULE}
 
-Already published by this pipeline on the same topic:
-{{previous_on_this_topic?}}
+Already covered in this subject area, which this article must not restate:
+{{topics_in_category?}}
 
 Produce:
 - angle: the specific argument or perspective this article takes, in one
@@ -103,10 +137,40 @@ and do not upgrade a weak source to make a claim usable.
 """.strip()
 
 
+def stance_section(content: ContentConfig) -> str:
+    """The site's commercial point of view, and the line it does not cross.
+
+    A company's own publication is expected to argue for what it sells, and an
+    article with no point of view persuades nobody. What earns the reader's
+    trust — and the sale — is that the argument survives contact with the
+    facts. So: advocate, lead with real strengths, and be straight about where
+    the alternative wins. A reader who follows confident advice into the wrong
+    equipment does not come back, and does tell people.
+    """
+    if not content.stance:
+        return ""
+    return f"""
+Point of view:
+{content.stance}
+
+Argue for it the way a good engineer argues: lead with the strongest real
+evidence, choose the comparisons that show it fairly, and be direct about the
+recommendation. Two things you may not do, because they cost more than they
+win:
+- Never contradict the fact registry to reach a conclusion. If the evidence
+  does not support the claim, the claim goes — not the evidence.
+- Never hide a limitation the reader would hit. Name the cases where another
+  approach is the right one, briefly and without apology; a piece that
+  acknowledges the exception is believed on everything else, and one that
+  pretends there are none reads as a brochure and is trusted like one.
+""".rstrip()
+
+
 def writer_instruction(content: ContentConfig, images: ImageConfig) -> str:
     return f"""
 Write the article in {content.language_name}. Tone: {content.tone}. Audience:
 {content.audience}. Length: {content.min_words}-{content.max_words} words.
+{stance_section(content)}
 
 Plan and facts you may use:
 {{research_bundle}}
@@ -133,6 +197,14 @@ Hard rules:
   English.
 - body is Markdown: a short opening that states what the reader will get,
   headings from the outline, and a close that does not oversell.
+
+Filing:
+- category must be one of the site's existing category slugs, listed here.
+  Pick the one a reader would expect this article under, not the broadest.
+- tags: two to five. Reuse the site's existing tags wherever one fits — a new
+  tag that means the same as an existing one splits the archive in two.
+
+{{site_taxonomy?}}
 
 Illustration:
 - Describe the lead image in featured_image_prompt — what a photograph of this

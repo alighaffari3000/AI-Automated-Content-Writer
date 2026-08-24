@@ -17,15 +17,28 @@ from pathlib import Path
 from typing import Any
 
 SCHEMA = """
+-- What the site writes about. This is the permanent part, and the only part a
+-- person maintains: the specific subject of each article is invented per run.
+CREATE TABLE IF NOT EXISTS categories (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    name          TEXT    NOT NULL UNIQUE,
+    description   TEXT    NOT NULL DEFAULT '',
+    audience      TEXT    NOT NULL DEFAULT '',
+    status        TEXT    NOT NULL DEFAULT 'active',
+    times_used    INTEGER NOT NULL DEFAULT 0,
+    created_at    TEXT    NOT NULL,
+    used_at       TEXT
+);
+
+-- Every subject the planner has invented, so it can see what it already
+-- covered and not propose it again. A log, not a queue — nobody stocks it.
 CREATE TABLE IF NOT EXISTS topics (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    title         TEXT    NOT NULL UNIQUE,
-    notes         TEXT    NOT NULL DEFAULT '',
+    category_id   INTEGER REFERENCES categories(id),
+    title         TEXT    NOT NULL,
+    angle         TEXT    NOT NULL DEFAULT '',
     keywords      TEXT    NOT NULL DEFAULT '',
     status        TEXT    NOT NULL DEFAULT 'active',
-    priority      INTEGER NOT NULL DEFAULT 0,
-    score         REAL    NOT NULL DEFAULT 0,
-    times_used    INTEGER NOT NULL DEFAULT 0,
     created_at    TEXT    NOT NULL,
     used_at       TEXT
 );
@@ -59,8 +72,51 @@ CREATE TABLE IF NOT EXISTS reviews (
 );
 
 CREATE INDEX IF NOT EXISTS idx_reviews_article ON reviews(article_id);
-CREATE INDEX IF NOT EXISTS idx_topics_status ON topics(status);
+CREATE INDEX IF NOT EXISTS idx_categories_status ON categories(status);
 """
+
+# Runs after the migration, because an older database reaches this point with a
+# `topics` table that has no category_id to index yet.
+LATE_INDEXES = """
+CREATE INDEX IF NOT EXISTS idx_topics_category ON topics(category_id);
+"""
+
+# The categories a solar and storage business writes about. Only a starting
+# point — they are rows, not code, and `categories add` is how a site says what
+# it actually covers.
+DEFAULT_CATEGORIES = [
+    (
+        "Residential solar",
+        "Home solar and storage: sizing, choosing equipment, what it costs, "
+        "living with it day to day.",
+        "homeowners deciding whether and what to buy",
+    ),
+    (
+        "Commercial and industrial",
+        "Solar and storage at business scale: peak shaving and demand charges, "
+        "factory backup power, microgrids, off-grid sites, energy audits.",
+        "plant managers and business owners weighing an investment",
+    ),
+    (
+        "Batteries and energy storage",
+        "Storage itself: chemistry, depth of discharge, cycle life, round-trip "
+        "efficiency, battery management, temperature, AC- versus DC-coupling.",
+        "buyers comparing storage on more than price",
+    ),
+    (
+        "Inverters and equipment",
+        "Inverters and the hardware around them: reading a datasheet, surge and "
+        "inductive loads, single- versus three-phase, efficiency and MPPT, "
+        "cabling and protection.",
+        "installers and technically-minded buyers",
+    ),
+    (
+        "Choosing and buying",
+        "Decision-making rather than hardware: common design mistakes, what to "
+        "ask a supplier, how to compare offers.",
+        "anyone about to spend money on a system",
+    ),
+]
 
 
 def _now() -> str:
@@ -74,20 +130,23 @@ class Store:
         with self._connect() as conn:
             conn.executescript(SCHEMA)
             self._migrate(conn)
+            conn.executescript(LATE_INDEXES)
 
     @staticmethod
     def _migrate(conn: sqlite3.Connection) -> None:
-        """Bring a database made by an earlier version up to date."""
+        """Bring a database made by an earlier version up to date.
+
+        `topics` used to be a hand-stocked queue; it is now a log of subjects
+        the planner invented. Old rows are kept as history — they say what was
+        written, which is exactly what the planner needs to not repeat itself.
+        """
         columns = {r["name"] for r in conn.execute("PRAGMA table_info(topics)")}
-        if "times_used" not in columns:
-            conn.execute(
-                "ALTER TABLE topics ADD COLUMN times_used INTEGER NOT NULL DEFAULT 0"
-            )
-            # Topics used to be consumed once and marked 'used'. They now cycle,
-            # so that state becomes "written once already, go to the back".
-            conn.execute(
-                "UPDATE topics SET times_used = 1 WHERE status = 'used'"
-            )
+        for name, ddl in (
+            ("category_id", "INTEGER REFERENCES categories(id)"),
+            ("angle", "TEXT NOT NULL DEFAULT ''"),
+        ):
+            if name not in columns:
+                conn.execute(f"ALTER TABLE topics ADD COLUMN {name} {ddl}")
         conn.execute(
             "UPDATE topics SET status = 'active' WHERE status IN ('queued', 'used')"
         )
@@ -102,80 +161,100 @@ class Store:
         finally:
             conn.close()
 
-    # ---------------------------------------------------------------- topics
+    # ------------------------------------------------------------ categories
 
-    def add_topic(
-        self,
-        title: str,
-        notes: str = "",
-        keywords: str = "",
-        priority: int = 0,
+    def add_category(
+        self, name: str, description: str = "", audience: str = ""
     ) -> int:
-        """Add a topic to the queue. Re-adding an existing title is a no-op."""
+        """Define a subject area. Re-adding an existing name is a no-op."""
         with self._connect() as conn:
             cur = conn.execute(
-                "INSERT OR IGNORE INTO topics (title, notes, keywords, priority, created_at)"
-                " VALUES (?, ?, ?, ?, ?)",
-                (title.strip(), notes.strip(), keywords.strip(), priority, _now()),
+                "INSERT OR IGNORE INTO categories (name, description, audience, created_at)"
+                " VALUES (?, ?, ?, ?)",
+                (name.strip(), description.strip(), audience.strip(), _now()),
             )
             if cur.lastrowid:
                 return int(cur.lastrowid)
             row = conn.execute(
-                "SELECT id FROM topics WHERE title = ?", (title.strip(),)
+                "SELECT id FROM categories WHERE name = ?", (name.strip(),)
             ).fetchone()
             return int(row["id"]) if row else 0
 
-    def next_topic(self) -> dict[str, Any] | None:
-        """The topic to write today.
+    def seed_default_categories(self) -> int:
+        """Give a fresh installation something to write about.
 
-        The bank is permanent: a topic is never consumed, it just goes to the
-        back of the queue. Fewest-times-written comes first, so every topic is
-        covered once before any is covered twice — a rule that holds however
-        close together the runs happen, which ordering by timestamp alone does
-        not. Then oldest-first, then priority, then score.
+        Returns how many were actually added, so running it twice reports
+        nothing rather than claiming to have added what was already there.
+        """
+        with self._connect() as conn:
+            existing = {
+                r["name"] for r in conn.execute("SELECT name FROM categories")
+            }
+        fresh = [c for c in DEFAULT_CATEGORIES if c[0] not in existing]
+        for name, description, audience in fresh:
+            self.add_category(name, description, audience)
+        return len(fresh)
 
-        A topic switched off by hand (`status = 'paused'`) is skipped without
-        being removed.
+    def next_category(self) -> dict[str, Any] | None:
+        """Whose turn it is today.
+
+        Fewest-articles-written first, so coverage stays even across every
+        subject area rather than drifting toward whichever one happens to
+        produce topics easily. Ordering by timestamp alone would not hold —
+        two runs in the same second tie, and rotation sticks on one row.
         """
         with self._connect() as conn:
             row = conn.execute(
-                "SELECT * FROM topics WHERE status <> 'paused'"
-                " ORDER BY times_used ASC, used_at IS NOT NULL, used_at ASC,"
-                "          priority DESC, score DESC, id ASC LIMIT 1"
+                "SELECT * FROM categories WHERE status <> 'paused'"
+                " ORDER BY times_used ASC, used_at IS NOT NULL, used_at ASC, id ASC"
+                " LIMIT 1"
             ).fetchone()
             return dict(row) if row else None
 
-    def mark_topic_used(self, topic_id: int) -> None:
-        """Send a topic to the back of the queue. It is never removed."""
+    def mark_category_used(self, category_id: int) -> None:
         with self._connect() as conn:
             conn.execute(
-                "UPDATE topics SET used_at = ?, times_used = times_used + 1"
+                "UPDATE categories SET used_at = ?, times_used = times_used + 1"
                 " WHERE id = ?",
-                (_now(), topic_id),
+                (_now(), category_id),
             )
 
-    def release_topic(self, topic_id: int) -> None:
-        """Undo a claim after a failed run, so the topic comes up again next."""
+    def release_category(self, category_id: int) -> None:
+        """Undo a claim after a failed run, so this category comes up next."""
         with self._connect() as conn:
             conn.execute(
-                "UPDATE topics SET used_at = NULL,"
+                "UPDATE categories SET used_at = NULL,"
                 " times_used = MAX(times_used - 1, 0) WHERE id = ?",
-                (topic_id,),
+                (category_id,),
             )
 
-    def articles_for_topic(self, topic_id: int, limit: int = 10) -> list[dict[str, Any]]:
-        """What this pipeline already published on this topic.
+    # ---------------------------------------------------------------- topics
 
-        The bank cycles, so a topic comes back around. The writer needs to know
-        what was said last time — otherwise the second article on a subject is
-        the first one again, in different words.
+    def record_topic(
+        self, category_id: int, title: str, angle: str = "", keywords: str = ""
+    ) -> int:
+        """Log a subject the planner just invented."""
+        with self._connect() as conn:
+            cur = conn.execute(
+                "INSERT INTO topics (category_id, title, angle, keywords, created_at, used_at)"
+                " VALUES (?, ?, ?, ?, ?, ?)",
+                (category_id, title.strip(), angle.strip(), keywords.strip(), _now(), _now()),
+            )
+            return int(cur.lastrowid or 0)
+
+    def topics_in_category(
+        self, category_id: int, limit: int = 40
+    ) -> list[dict[str, Any]]:
+        """What has already been covered here.
+
+        The planner reads this before proposing anything: without it, an
+        inventive planner reinvents the same obvious subject every few weeks.
         """
         with self._connect() as conn:
             rows = conn.execute(
-                "SELECT title, excerpt, created_at FROM articles"
-                " WHERE topic_id = ? AND title <> '' AND status = 'draft_sent'"
-                " ORDER BY id DESC LIMIT ?",
-                (topic_id, limit),
+                "SELECT title, angle, created_at FROM topics"
+                " WHERE category_id = ? ORDER BY id DESC LIMIT ?",
+                (category_id, limit),
             ).fetchall()
             return [dict(r) for r in rows]
 

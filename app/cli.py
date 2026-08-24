@@ -98,68 +98,103 @@ def cmd_check(args: argparse.Namespace) -> int:
         print(f"{key.rjust(width)} : {value}")
 
     store = get_store()
-    topic = store.next_topic()
-    print(f"{'next topic'.rjust(width)} : {topic['title'] if topic else 'QUEUE EMPTY'}")
+    category = store.next_category()
+    print(
+        f"{'next category'.rjust(width)} : "
+        f"{category['name'] if category else 'NONE DEFINED'}"
+    )
+    print(f"{'images'.rjust(width)} : {settings.images.model if settings.images.enabled else 'off'}")
 
     problems = []
     if not site.configured:
         problems.append("SITE_API_URL / SITE_API_TOKEN are required to deliver drafts.")
-    if not topic:
-        problems.append("The topic queue is empty; add topics before the next run.")
+    if not category:
+        problems.append(
+            "No subject areas defined; run `python -m app.cli categories seed`."
+        )
     for problem in problems:
         print(f"  ! {problem}")
     return 1 if problems else 0
 
 
-def cmd_topics_add(args: argparse.Namespace) -> int:
-    topic_id = get_store().add_topic(
-        title=args.title,
-        notes=args.notes or "",
-        keywords=args.keywords or "",
-        priority=args.priority,
+def cmd_categories_add(args: argparse.Namespace) -> int:
+    category_id = get_store().add_category(
+        name=args.name, description=args.description or "", audience=args.audience or ""
     )
-    print(f"queued #{topic_id}: {args.title}")
+    print(f"category #{category_id}: {args.name}")
     return 0
 
 
-def cmd_topics_list(args: argparse.Namespace) -> int:
-    """The bank, in the order it will be written — next one first."""
+def cmd_categories_seed(args: argparse.Namespace) -> int:
+    added = get_store().seed_default_categories()
+    print(f"{added} default categor{'y' if added == 1 else 'ies'} added.")
+    return cmd_categories_list(args)
+
+
+def cmd_categories_list(args: argparse.Namespace) -> int:
+    """Subject areas, in the order they will be written — next one first."""
     store = get_store()
     with store._connect() as conn:  # noqa: SLF001 - a CLI reading its own store
         rows = conn.execute(
-            "SELECT id, title, status, priority, score, times_used, used_at"
-            " FROM topics"
-            " ORDER BY status = 'paused', times_used ASC,"
-            "          used_at IS NOT NULL, used_at ASC,"
-            "          priority DESC, score DESC, id ASC"
+            "SELECT c.*, (SELECT COUNT(*) FROM topics t WHERE t.category_id = c.id)"
+            "        AS topic_count"
+            " FROM categories c"
+            " ORDER BY c.status = 'paused', c.times_used ASC,"
+            "          c.used_at IS NOT NULL, c.used_at ASC, c.id ASC"
         ).fetchall()
     if not rows:
-        print('No topics yet. Add one with: python -m app.cli topics add "..."')
+        print(
+            "No categories yet. Start with the defaults:\n"
+            "  python -m app.cli categories seed\n"
+            'Or define your own: python -m app.cli categories add "..." --description "..."'
+        )
         return 0
 
-    print(f"{len(rows)} topic(s) in the bank, next to be written first:\n")
+    print(f"{len(rows)} subject area(s), next up first:\n")
     for position, row in enumerate(rows, start=1):
         marker = "  " if row["status"] == "paused" else ("->" if position == 1 else "  ")
         last = (row["used_at"] or "never")[:10]
         print(
-            f"{marker} #{row['id']:<4} {row['status']:<7} p{row['priority']:<3} "
-            f"written {row['times_used']:<3} last {last:<11} {row['title']}"
+            f"{marker} #{row['id']:<3} {row['status']:<7} written {row['times_used']:<3} "
+            f"last {last:<11} {row['name']}"
         )
+        if row["description"]:
+            print(f"       {row['description'][:88]}")
     return 0
 
 
-def cmd_topics_pause(args: argparse.Namespace) -> int:
-    """Take a topic out of rotation without deleting it."""
+def cmd_categories_pause(args: argparse.Namespace) -> int:
+    """Take a subject area out of rotation without deleting it."""
     status = "active" if args.resume else "paused"
-    store = get_store()
-    with store._connect() as conn:  # noqa: SLF001 - a CLI writing its own store
+    with get_store()._connect() as conn:  # noqa: SLF001
         changed = conn.execute(
-            "UPDATE topics SET status = ? WHERE id = ?", (status, args.id)
+            "UPDATE categories SET status = ? WHERE id = ?", (status, args.id)
         ).rowcount
     if not changed:
-        print(f"No topic with id {args.id}.")
+        print(f"No category with id {args.id}.")
         return 1
-    print(f"topic #{args.id} is now {status}")
+    print(f"category #{args.id} is now {status}")
+    return 0
+
+
+def cmd_topics_list(args: argparse.Namespace) -> int:
+    """What the planner has already invented, newest first."""
+    with get_store()._connect() as conn:  # noqa: SLF001
+        rows = conn.execute(
+            "SELECT t.id, t.title, t.angle, t.created_at, c.name AS category"
+            " FROM topics t LEFT JOIN categories c ON c.id = t.category_id"
+            " ORDER BY t.id DESC LIMIT ?",
+            (args.limit,),
+        ).fetchall()
+    if not rows:
+        print("Nothing written yet — the planner invents a subject on each run.")
+        return 0
+    print(f"{len(rows)} subject(s) covered so far, newest first:\n")
+    for row in rows:
+        print(f"#{row['id']:<4} {(row['created_at'] or '')[:10]}  [{row['category'] or '-'}]")
+        print(f"      {row['title']}")
+        if row["angle"]:
+            print(f"      ↳ {row['angle'][:92]}")
     return 0
 
 
@@ -180,27 +215,39 @@ def main(argv: list[str] | None = None) -> int:
         "check", help="show configuration and readiness", parents=[common]
     ).set_defaults(func=cmd_check)
 
-    topics = sub.add_parser("topics", help="manage the topic queue")
-    topics_sub = topics.add_subparsers(dest="topics_command", required=True)
+    cats = sub.add_parser("categories", help="the subject areas you maintain")
+    cats_sub = cats.add_subparsers(dest="categories_command", required=True)
 
-    add = topics_sub.add_parser("add", help="queue a topic", parents=[common])
-    add.add_argument("title")
-    add.add_argument("--notes", default="", help="angle, constraints, anything useful")
-    add.add_argument("--keywords", default="", help="comma-separated target keywords")
-    add.add_argument("--priority", type=int, default=0, help="higher runs sooner")
-    add.set_defaults(func=cmd_topics_add)
+    add = cats_sub.add_parser("add", help="define a subject area", parents=[common])
+    add.add_argument("name")
+    add.add_argument(
+        "--description", default="", help="what this area covers, in a sentence or two"
+    )
+    add.add_argument("--audience", default="", help="who reads articles in this area")
+    add.set_defaults(func=cmd_categories_add)
 
-    topics_sub.add_parser(
-        "list", help="show the bank in writing order", parents=[common]
-    ).set_defaults(func=cmd_topics_list)
+    cats_sub.add_parser(
+        "seed", help="add a starting set of subject areas", parents=[common]
+    ).set_defaults(func=cmd_categories_seed)
 
-    pause = topics_sub.add_parser(
-        "pause", help="take a topic out of rotation (it is never deleted)",
-        parents=[common],
+    cats_sub.add_parser(
+        "list", help="show subject areas in rotation order", parents=[common]
+    ).set_defaults(func=cmd_categories_list)
+
+    pause = cats_sub.add_parser(
+        "pause", help="take an area out of rotation (never deleted)", parents=[common]
     )
     pause.add_argument("id", type=int)
     pause.add_argument("--resume", action="store_true", help="put it back in rotation")
-    pause.set_defaults(func=cmd_topics_pause)
+    pause.set_defaults(func=cmd_categories_pause)
+
+    topics = sub.add_parser("topics", help="what the planner has written about")
+    topics_sub = topics.add_subparsers(dest="topics_command", required=True)
+    history = topics_sub.add_parser(
+        "list", help="subjects covered so far", parents=[common]
+    )
+    history.add_argument("--limit", type=int, default=40)
+    history.set_defaults(func=cmd_topics_list)
 
     args = parser.parse_args(argv)
     _setup_logging(args.verbose)
