@@ -142,6 +142,10 @@ class SiteClient:
         featured_image: str = "",
         category: str = "",
         tags: list[str] | None = None,
+        seo_title: str = "",
+        meta_description: str = "",
+        related_products: list[str] | None = None,
+        related_solutions: list[str] | None = None,
         meta: dict[str, Any] | None = None,
     ) -> tuple[bool, str]:
         """Send the article over. Returns (ok, remote id or error message).
@@ -164,6 +168,10 @@ class SiteClient:
             "featured_image": featured_image,
             "category": category,
             "tags": tags or [],
+            "seo_title": seo_title,
+            "meta_description": meta_description,
+            "related_products": related_products or [],
+            "related_solutions": related_solutions or [],
             "meta": meta or {},
         }
         if self.dry_run:

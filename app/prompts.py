@@ -198,11 +198,25 @@ Hard rules:
 - body is Markdown: a short opening that states what the reader will get,
   headings from the outline, and a close that does not oversell.
 
-Filing:
-- category must be one of the site's existing category slugs, listed here.
+Search listing:
+- seo_title: how this should read in a search result. Lead with the words
+  someone would actually type, then what they get. Around 60 characters — a
+  longer one is cut off mid-word. It may differ from the article title.
+- meta_description: the snippet under it. Say what the reader gets and why it
+  is worth opening, in about 150 characters. Not a copy of the excerpt, and
+  not a keyword list.
+
+Filing and linking:
+- category must be one of the site's existing category slugs, listed below.
   Pick the one a reader would expect this article under, not the broadest.
 - tags: two to five. Reuse the site's existing tags wherever one fits — a new
   tag that means the same as an existing one splits the archive in two.
+- related_products and related_solutions: the catalogue and solution pages this
+  article genuinely discusses, by slug, from the list below. A reader who just
+  learned how to size a system should be one click from the thing that does it.
+  Only what the article actually covers, though: a link the article did not
+  earn is a dead end that teaches the reader to ignore the rest. None is a
+  perfectly good answer for a purely explanatory piece.
 
 {{site_taxonomy?}}
 
@@ -304,7 +318,10 @@ Draft:
 
 Check:
 1. The title reads like something a person would click and states the subject
-   plainly; the excerpt works as a meta description.
+   plainly. seo_title and meta_description are filled, are not copies of the
+   title and excerpt, and would survive being cut at roughly 60 and 150
+   characters. An empty or duplicated one is a major issue — it is what a
+   searcher sees before they see anything else.
 2. Heading structure is logical and scannable; no wall of text.
 3. Target keywords appear where they belong — title, opening, headings — and
    nowhere they read as stuffing. A keyword in a different script or language

@@ -378,6 +378,10 @@ def finalize(ctx: Context, node_input: dict[str, Any]) -> Event:
         featured_image=featured_url,
         category=draft.category,
         tags=draft.tags,
+        seo_title=draft.seo_title,
+        meta_description=draft.meta_description,
+        related_products=draft.related_products,
+        related_solutions=draft.related_solutions,
         meta={
             "generated_by": "ai-content-writer",
             "verdict": verdict,

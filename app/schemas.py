@@ -90,9 +90,31 @@ class ArticleDraft(BaseModel):
         default="",
         description="Alt text for the lead image, in the article's language.",
     )
+    seo_title: str = Field(
+        default="",
+        description=(
+            "Title for the search result: the question a searcher types, "
+            "answered. Up to about 60 characters."
+        ),
+    )
+    meta_description: str = Field(
+        default="",
+        description=(
+            "The search snippet: what the reader gets and why to click. "
+            "About 150 characters, not a copy of the excerpt."
+        ),
+    )
     category: str = Field(
         default="",
         description="Slug of the site category this belongs in. Must be one that exists.",
+    )
+    related_products: list[str] = Field(
+        default_factory=list,
+        description="Slugs of catalogue products this article genuinely discusses.",
+    )
+    related_solutions: list[str] = Field(
+        default_factory=list,
+        description="Slugs of solution pages this article genuinely relates to.",
     )
     tags: list[str] = Field(
         default_factory=list,
