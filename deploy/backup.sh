@@ -11,7 +11,7 @@
 set -eu
 
 DATA_DIR="${DATA_DIR:-/var/lib/content-writer}"
-IMAGE="${IMAGE:-__IMAGE__}"
+PYTHON="${PYTHON:-/opt/content-writer/.venv/bin/python}"
 KEEP="${KEEP:-14}"
 
 if [ ! -f "$DATA_DIR/pipeline.db" ]; then
@@ -22,19 +22,22 @@ fi
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 mkdir -p "$DATA_DIR/backups"
 
-docker run --rm \
-    -v "$DATA_DIR:/code/data" \
-    "$IMAGE" \
-    uv run --no-sync python -c "
+DATA_DIR="$DATA_DIR" STAMP="$STAMP" "$PYTHON" - <<'PY'
+import os
 import sqlite3
-source = sqlite3.connect('/code/data/pipeline.db')
-target = sqlite3.connect('/code/data/backups/pipeline-${STAMP}.db')
+
+data = os.environ["DATA_DIR"]
+stamp = os.environ["STAMP"]
+name = f"backups/pipeline-{stamp}.db"
+
+source = sqlite3.connect(f"{data}/pipeline.db")
+target = sqlite3.connect(f"{data}/{name}")
 with target:
     source.backup(target)
 target.close()
 source.close()
-print('backed up to backups/pipeline-${STAMP}.db')
-"
+print(f"backed up to {name}")
+PY
 
 # Keep the newest few. Enough to survive a bad week; not enough to fill a disk.
 ls -1t "$DATA_DIR"/backups/pipeline-*.db 2>/dev/null \

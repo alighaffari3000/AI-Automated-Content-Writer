@@ -1,8 +1,5 @@
 # One article, once. The timer beside this file decides when.
 #
-# The image reference below is filled in by deploy/install.sh, so the image
-# this runs and the image that was pulled cannot drift apart.
-#
 # Installed by deploy/install.sh to /etc/systemd/system/. Run it by hand with
 #   sudo systemctl start content-writer.service
 # and read what happened with
@@ -11,34 +8,43 @@
 [Unit]
 Description=Write today's article
 Documentation=https://github.com/alighaffari3000/AI-Automated-Content-Writer
-Requires=docker.service
-After=docker.service network-online.target
+After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=oneshot
+User=contentwriter
+Group=contentwriter
+WorkingDirectory=/opt/content-writer
+
+# The database belongs to the machine, not to the checkout: an update replaces
+# everything under /opt and must not touch what the pipeline has learned.
+Environment=DB_PATH=/var/lib/content-writer/pipeline.db
+# HOME so uv looks for its own files somewhere this user owns, and a cache
+# under the private /tmp this service gets.
+Environment=HOME=/opt/content-writer
+Environment=UV_CACHE_DIR=/tmp/uv-cache
+
+# --no-sync: the environment was built at install time and is never modified by
+# a run, which is what lets the code directory stay read-only in practice.
+ExecStart=/usr/local/bin/uv run --no-sync python -m app.cli run
 
 # A run is seven model calls and takes a couple of minutes. This ceiling exists
 # for the run that hangs on a network that never answers: without it, a stuck
-# container would still be holding the timer tomorrow.
+# process would still be holding the timer tomorrow.
 TimeoutStartSec=1800
 
-# --rm because the container is disposable; everything worth keeping is in the
-# volume. The name makes a stuck run easy to find with `docker ps`.
-#
-# The environment file is mounted rather than passed with --env-file: it is
-# then read by python-dotenv, which understands quotes and comments the same
-# way the .env.example in the repository is written.
-ExecStart=/usr/bin/docker run --rm \
-    --name content-writer \
-    -v /var/lib/content-writer:/code/data \
-    -v /etc/content-writer/env:/code/.env:ro \
-    --add-host=host.docker.internal:host-gateway \
-    __IMAGE__
-
-# If the run is still going when systemd stops it, stop the container too,
-# rather than leaving it orphaned holding the database.
-ExecStopPost=-/usr/bin/docker rm -f content-writer
+# This runs on a machine that also serves a website, so it gets no more than it
+# needs: no new privileges, its own /tmp, read-only system directories, and one
+# writable path — the database.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ProtectControlGroups=true
+ProtectKernelTunables=true
+RestrictSUIDSGID=true
+ReadWritePaths=/var/lib/content-writer
 
 [Install]
 WantedBy=multi-user.target

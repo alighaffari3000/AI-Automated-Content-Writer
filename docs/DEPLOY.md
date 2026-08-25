@@ -5,9 +5,18 @@ files it as a draft and exits. So there is nothing to keep running and nothing
 listening on a port — what has to be permanent is the schedule, the database,
 and the secrets.
 
-These instructions put it on a Linux server with Docker and a systemd timer.
-That is the arrangement the design assumes: one small container run once a day,
-with the database on a disk that outlives it.
+These instructions put it on a Linux server with a systemd timer. No container:
+this is two minutes of work a day, and a container runtime would be a daemon
+running all day to host it. The dependencies are prebuilt wheels — about 280 MB,
+downloaded once, no compiler involved.
+
+It ends up as three directories, each with one job:
+
+| Directory | Holds | On update |
+|---|---|---|
+| `/opt/content-writer` | the code and its virtualenv | replaced |
+| `/var/lib/content-writer` | the database and its backups | never touched |
+| `/etc/content-writer` | the keys and the settings | never touched |
 
 ## Before you start
 
@@ -30,34 +39,14 @@ good internal link from a broken one, so it stops checking rather than guessing.
 
 **And the server needs:**
 
-- Docker (`docker --version`)
+- systemd, and `curl` for the one-time uv install
 - its clock set to the timezone you want the articles written in
   (`timedatectl set-timezone Asia/Tehran`)
 - outbound HTTPS to the model API and to whatever the research reads
-- about 2 GB of disk for the image, and very little else — a run is a couple of
-  minutes of one core
+- about 400 MB of disk, and very little else — a run is a couple of minutes of
+  one core, and nothing at all runs between runs
 
-## Where the image comes from
-
-It is built by GitHub Actions and published to
-`ghcr.io/alighaffari3000/ai-content-writer`. `docker build` is by far the
-heaviest thing that would ever happen on this server — heavier than a run —
-and there is no reason for it to happen there at all.
-
-Every push to `main` builds and publishes `:latest`, plus `:sha-<commit>` so any
-build can be pinned or rolled back to. To publish from a branch before merging
-it, run the `image` workflow from the Actions tab with **tag_as_latest** ticked.
-
-**One thing has to be done by hand, once:** a package published from a public
-repository is still private until you say otherwise. After the first successful
-build, open
-[the package settings](https://github.com/users/alighaffari3000/packages/container/ai-content-writer/settings)
-and change its visibility to Public. Then the server pulls with no credentials
-at all. (Leaving it private also works — the server then needs
-`docker login ghcr.io` with a token that has `read:packages`.)
-
-If the registry is unreachable, or you want to run a change that is not pushed
-yet, `sudo BUILD_LOCALLY=1 ./deploy/install.sh` builds on the machine instead.
+No system Python is needed: uv fetches its own if the server's is too old.
 
 ## Install
 
@@ -67,24 +56,23 @@ cd AI-Automated-Content-Writer
 sudo ./deploy/install.sh
 ```
 
-That pulls the image, creates `/var/lib/content-writer` for the database,
-copies `.env.example` to `/etc/content-writer/env` — with `DRY_RUN=true`, so a
-fresh install cannot publish to a live site by accident — and enables two
-timers: one that writes an article every morning, one that backs up the
-database every night. It is safe to run again: it never touches the database or
-an environment file that already exists.
+That creates a `contentwriter` system user, installs uv if it is missing, copies
+the code to `/opt/content-writer` and builds its environment there, creates
+`/var/lib/content-writer` for the database, copies `.env.example` to
+`/etc/content-writer/env` — with `DRY_RUN=true`, so a fresh install cannot
+publish to a live site by accident — and enables two timers: one that writes an
+article every morning, one that backs up the database every night.
 
-The environment file ends up `root:10001` with mode `640`. It holds your API
-keys, so it is not world-readable, but the container runs as an unprivileged
-user (uid 10001) and has to read it. If you replace the file by hand, keep
-those permissions or the container will start with no configuration at all.
-
-Docker 20.10 or newer is assumed, for `--add-host=host-gateway`.
+It is safe to run again: it never touches the database or an environment file
+that already exists.
 
 ## Fill in the secrets
 
-Edit `/etc/content-writer/env`. The file is read by python-dotenv, so it takes
-the same syntax as `.env.example`, comments and all.
+Edit `/etc/content-writer/env`. It is read by python-dotenv, so it takes the
+same syntax as `.env.example`, comments and all. The file ends up
+`root:contentwriter` mode `640` — it holds your API keys, so it is readable by
+the service and by nobody else. If you replace it by hand, keep those
+permissions or the service starts with no configuration at all.
 
 At minimum:
 
@@ -104,22 +92,17 @@ Worth setting before the first real run:
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | how you find out a draft is waiting, or that a run failed |
 | `DRY_RUN` | left `true` by the installer: everything happens except sending anything anywhere |
 
-**If the site is on this same server** and you point `SITE_API_URL` at
-`localhost`, the container will not find it — inside a container, localhost is
-the container. Either use the site's public URL, or use
-`http://host.docker.internal:PORT`, which the service unit already makes
-resolvable.
+`DB_PATH` is set by the service unit and does not belong in this file.
 
 ## First run
 
-A shorthand for talking to the pipeline, worth putting in your shell profile:
+A shorthand for talking to the pipeline as the service does, worth putting in
+your shell profile:
 
 ```bash
-alias cw='sudo docker run --rm -it \
-    -v /var/lib/content-writer:/code/data \
-    -v /etc/content-writer/env:/code/.env:ro \
-    ghcr.io/alighaffari3000/ai-content-writer:latest \
-    uv run --no-sync python -m app.cli'
+alias cw='sudo -u contentwriter env HOME=/opt/content-writer \
+    DB_PATH=/var/lib/content-writer/pipeline.db \
+    /usr/local/bin/uv run --no-sync --project /opt/content-writer python -m app.cli'
 ```
 
 Then:
@@ -129,14 +112,14 @@ cw check                 # what is configured, and what is missing
 cw categories seed       # or `categories add "..."` for your own subject areas
 ```
 
-Then, still in dry run, write one article for real:
+Still in dry run, write one article for real:
 
 ```bash
 sudo systemctl start content-writer.service
 journalctl -u content-writer.service -n 200 --no-pager
 ```
 
-Read the article it produced before letting it publish anything:
+Read what it produced before letting it publish anything:
 
 ```bash
 cw topics list
@@ -165,26 +148,16 @@ lost; the database stays.
 
 ## Updating
 
-Push to `main`, wait for the build, then on the server:
-
 ```bash
 cd AI-Automated-Content-Writer
 git pull
 sudo ./deploy/install.sh
 ```
 
-`git pull` is for the unit files and this runbook; the code arrives in the
-image. The database migrates itself on the next run: new columns and tables are
-added in place, and no existing row is dropped.
-
-To go back to a build that worked:
-
-```bash
-sudo IMAGE=ghcr.io/alighaffari3000/ai-content-writer:sha-1a2b3c4 ./deploy/install.sh
-```
-
-That pins the unit to that image until the next plain `install.sh` puts it back
-on `latest`.
+The code in `/opt/content-writer` is replaced and its environment rebuilt; the
+database and the settings are left alone. The database migrates itself on the
+next run: new columns and tables are added in place, and no existing row is
+dropped.
 
 ## Backups and restore
 
@@ -203,7 +176,7 @@ To restore, put the file back and let it be found:
 sudo systemctl stop content-writer.timer
 sudo cp /var/lib/content-writer/backups/pipeline-YYYYMMDDTHHMMSSZ.db \
         /var/lib/content-writer/pipeline.db
-sudo chown 10001:10001 /var/lib/content-writer/pipeline.db
+sudo chown contentwriter:contentwriter /var/lib/content-writer/pipeline.db
 sudo systemctl start content-writer.timer
 ```
 
@@ -215,15 +188,13 @@ has the whole run.
 
 | What you see | What it usually is |
 |---|---|
-| `SITE_API_URL / SITE_API_TOKEN are required` | the environment file is not filled in, or not mounted |
-| The site API times out, and the site is on this machine | `localhost` inside a container is the container — see above |
+| `SITE_API_URL / SITE_API_TOKEN are required` | the environment file is not filled in, or the symlink at `/opt/content-writer/.env` is gone |
 | A 404 from the model | the region, not the model name: set `GOOGLE_CLOUD_LOCATION=global` |
 | `Research found no source solid enough to write from` | the run stopped on purpose; nothing was published |
 | Every fact ranks as "general web" | `SOURCE_MANUFACTURERS` is empty |
-| Permission denied writing the database | the volume is not owned by uid 10001 — `sudo chown -R 10001:10001 /var/lib/content-writer` |
-| A run stuck for hours | `docker rm -f content-writer`; the next run recovers the abandoned article by itself |
-| `docker pull` says denied or not found | the package is still private — see [Where the image comes from](#where-the-image-comes-from) |
-| `exec format error` | the image is for another architecture: check `uname -m` and rebuild with the matching `platforms` input |
+| Permission denied writing the database | `sudo chown -R contentwriter:contentwriter /var/lib/content-writer` |
+| `uv: command not found` from systemd | uv is not at `/usr/local/bin/uv`; re-run the installer or edit the unit's `ExecStart` |
+| A run stuck for hours | `sudo systemctl stop content-writer.service`; the next run recovers the abandoned article by itself |
 
 A run that dies halfway leaves nothing broken behind: the next one rolls back
 the abandoned article, gives the category its turn back, and un-logs the

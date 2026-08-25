@@ -149,18 +149,19 @@ send the article anywhere.
 
 ### Running it permanently
 
-On a server, with Docker and a systemd timer:
+On a server, with a systemd timer:
 
 ```bash
 sudo ./deploy/install.sh
 ```
 
-The image is built by GitHub Actions and pulled from there, so the server never
-runs a build. The installer puts the database somewhere it will survive a redeploy,
-and enables two timers: one that writes an article every morning, one that backs
-the database up every night. [docs/DEPLOY.md](docs/DEPLOY.md) has the whole
-runbook — what the target site must provide first, what to fill in, how to make
-the first run publish nothing, and what to do when something breaks.
+That installs the code under `/opt`, the database under `/var/lib` where it
+survives every update, and the settings under `/etc`; then it enables two
+timers — one that writes an article every morning, one that backs the database
+up every night. No container: this is two minutes of work a day, and nothing at
+all runs between runs. [docs/DEPLOY.md](docs/DEPLOY.md) has the whole runbook —
+what the target site must provide first, what to fill in, how to make the first
+run publish nothing, and what to do when something breaks.
 
 ## What the site must provide
 

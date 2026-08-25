@@ -1,75 +1,84 @@
 #!/bin/bash
 # Put the pipeline on a server, or update it after a `git pull`.
 #
-# Safe to run again: it fetches the image, installs the units and leaves the
-# database and the environment file exactly where they were. Nothing here
-# deletes anything.
-#
 #   sudo ./deploy/install.sh
 #
-# The image is built by GitHub Actions and pulled from there, because
-# `docker build` is the heaviest thing that would ever happen on a machine
-# whose actual job is a two-minute run once a day. To build it here anyway —
-# no network to the registry, or a change not pushed yet:
+# Safe to run again: it replaces the code and the environment it runs in, and
+# leaves the database and the configuration exactly where they were. Nothing
+# here deletes anything you wrote.
 #
-#   sudo BUILD_LOCALLY=1 ./deploy/install.sh
+# No container. This is a two-minute job once a day, and a container runtime
+# would be a daemon running all day to host it. The dependencies are prebuilt
+# wheels — about 280 MB, downloaded once by uv, no compiler involved.
 #
-# To pin a particular build instead of following latest:
+# It ends up as three directories, each with one job:
 #
-#   sudo IMAGE=ghcr.io/alighaffari3000/ai-content-writer:sha-1a2b3c4 ./deploy/install.sh
+#   /opt/content-writer      the code and its virtualenv, replaced on update
+#   /var/lib/content-writer  the database and its backups, never touched
+#   /etc/content-writer      the keys and the settings, never touched
 #
 set -euo pipefail
 
-IMAGE="${IMAGE:-ghcr.io/alighaffari3000/ai-content-writer:latest}"
-BUILD_LOCALLY="${BUILD_LOCALLY:-0}"
+APP_DIR="${APP_DIR:-/opt/content-writer}"
 DATA_DIR="${DATA_DIR:-/var/lib/content-writer}"
 ENV_DIR="${ENV_DIR:-/etc/content-writer}"
 LIB_DIR="${LIB_DIR:-/usr/local/lib/content-writer}"
 UNIT_DIR="${UNIT_DIR:-/etc/systemd/system}"
-# Matches the user inside the image, so the container can write the database
-# on a volume the host also understands.
-CONTAINER_UID="${CONTAINER_UID:-10001}"
+UV="${UV:-/usr/local/bin/uv}"
+SERVICE_USER="${SERVICE_USER:-contentwriter}"
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(dirname "$here")"
 
 if [ "$(id -u)" -ne 0 ]; then
-    echo "This installs into /etc and /var/lib — run it with sudo." >&2
-    exit 1
-fi
-if ! command -v docker >/dev/null 2>&1; then
-    echo "Docker is not installed. Install it first: https://docs.docker.com/engine/install/" >&2
+    echo "This installs into /opt, /etc and /var/lib — run it with sudo." >&2
     exit 1
 fi
 
-if [ "$BUILD_LOCALLY" = "1" ]; then
-    echo "==> Building $IMAGE here"
-    docker build -t "$IMAGE" "$root"
+echo "==> Service user: $SERVICE_USER"
+if ! id "$SERVICE_USER" >/dev/null 2>&1; then
+    # A system account with a home under /opt, because uv keeps its own files
+    # in HOME and the service must own everything it reads.
+    useradd --system --create-home --home-dir "$APP_DIR" \
+            --shell /usr/sbin/nologin "$SERVICE_USER"
+    echo "    Created."
 else
-    echo "==> Fetching $IMAGE"
-    if ! docker pull "$IMAGE"; then
-        cat >&2 <<EOF
-
-Could not pull $IMAGE.
-
-Two things it usually is:
-  * The package is still private. Make it public once, at
-    https://github.com/users/alighaffari3000/packages/container/ai-content-writer/settings
-    (Danger Zone -> Change visibility -> Public). The repository being public
-    does not make its images public.
-  * No build has finished yet. Check the Actions tab; the workflow publishes
-    :latest from main, and from a branch when you dispatch it with
-    "tag_as_latest".
-
-Or build it on this machine instead: sudo BUILD_LOCALLY=1 $0
-EOF
-        exit 1
-    fi
+    echo "    Already exists."
 fi
+
+echo "==> uv"
+if [ ! -x "$UV" ]; then
+    if command -v uv >/dev/null 2>&1; then
+        UV="$(command -v uv)"
+        echo "    Using $UV"
+    else
+        echo "    Installing to /usr/local/bin"
+        curl -LsSf https://astral.sh/uv/install.sh \
+            | env UV_INSTALL_DIR=/usr/local/bin INSTALLER_NO_MODIFY_PATH=1 sh
+    fi
+else
+    echo "    Already installed: $("$UV" --version)"
+fi
+
+echo "==> Copying the code to $APP_DIR"
+mkdir -p "$APP_DIR"
+# The checkout, minus everything that belongs to the machine rather than to the
+# code. --delete so a file removed upstream stops existing here too, and the
+# virtualenv is protected from it because uv rebuilds it in the next step.
+tar -C "$root" \
+    --exclude=.git --exclude=.venv --exclude=data --exclude=logs \
+    --exclude=__pycache__ --exclude='*.pyc' \
+    -cf - . | tar -C "$APP_DIR" -xf -
+chown -R "$SERVICE_USER:$SERVICE_USER" "$APP_DIR"
+
+echo "==> Building the environment (this is the slow step, once)"
+sudo -u "$SERVICE_USER" env \
+    HOME="$APP_DIR" UV_CACHE_DIR=/tmp/uv-cache \
+    "$UV" sync --frozen --project "$APP_DIR"
 
 echo "==> Preparing $DATA_DIR"
 mkdir -p "$DATA_DIR/backups"
-chown -R "$CONTAINER_UID:$CONTAINER_UID" "$DATA_DIR"
+chown -R "$SERVICE_USER:$SERVICE_USER" "$DATA_DIR"
 chmod 750 "$DATA_DIR"
 
 echo "==> Preparing $ENV_DIR/env"
@@ -91,28 +100,22 @@ else
     echo "    Already there; left untouched."
     NEEDS_EDITING=0
 fi
-# It holds the API keys and the site's token, so it is not world-readable — but
-# the container runs as an unprivileged user and has to read it, so the group
-# is the container's own uid rather than root's.
-chown "root:$CONTAINER_UID" "$ENV_DIR/env"
+# It holds the API keys and the site's token: readable by the service, by
+# nobody else.
+chown "root:$SERVICE_USER" "$ENV_DIR/env"
 chmod 640 "$ENV_DIR/env"
-
-# The unit and the backup script both name the image; both get it from here,
-# so the image that runs and the image that was pulled cannot drift apart.
-fill_in() {
-    sed "s|__IMAGE__|$IMAGE|g" "$1"
-}
+# The application reads .env from its working directory, exactly as it does on
+# a laptop. One file, one format, no second way of configuring things.
+ln -sfn "$ENV_DIR/env" "$APP_DIR/.env"
+chown -h "$SERVICE_USER:$SERVICE_USER" "$APP_DIR/.env"
 
 echo "==> Installing the backup script"
-mkdir -p "$LIB_DIR"
-fill_in "$here/backup.sh" >"$LIB_DIR/backup.sh"
-chmod 755 "$LIB_DIR/backup.sh"
+install -D -m 755 "$here/backup.sh" "$LIB_DIR/backup.sh"
 
 echo "==> Installing the units"
 for unit in content-writer.service content-writer.timer \
             content-writer-backup.service content-writer-backup.timer; do
-    fill_in "$here/$unit" >"$UNIT_DIR/$unit"
-    chmod 644 "$UNIT_DIR/$unit"
+    install -m 644 "$here/$unit" "$UNIT_DIR/$unit"
 done
 systemctl daemon-reload
 
@@ -130,11 +133,11 @@ Next, and nothing will work until this is done:
   1. Fill in $ENV_DIR/env — at minimum GEMINI_API_KEY, SITE_API_URL and
      SITE_API_TOKEN.
   2. Check what the pipeline sees:
-       sudo docker run --rm -v $DATA_DIR:/code/data -v $ENV_DIR/env:/code/.env:ro \\
-           $IMAGE uv run --no-sync python -m app.cli check
-  3. Give it something to write about:
-       ... app.cli categories seed
-  4. Try one run without publishing anything: set DRY_RUN=true, then
+       sudo -u $SERVICE_USER env HOME=$APP_DIR DB_PATH=$DATA_DIR/pipeline.db \\
+           $UV run --no-sync --project $APP_DIR python -m app.cli check
+  3. Give it something to write about, with the same prefix:
+       ... python -m app.cli categories seed
+  4. Try one run — DRY_RUN is on, so it publishes nothing:
        sudo systemctl start content-writer.service
        journalctl -u content-writer.service -n 200 --no-pager
 EOF
