@@ -84,6 +84,40 @@ asserting on it produces flaky tests that teach nothing. An eval dataset with
 LLM-judge scoring, run against fixed inputs, is what turns "the reviewers seem
 generous" into a number that can be tracked across prompt changes.
 
+**The measurable half of SEO moves into the gate.** Today every SEO
+judgment is a model's score, but most on-page SEO is measurement, not opinion:
+title and meta description length, exactly one H1 and an unbroken heading
+hierarchy, the target keyword present in the title and the opening, alt text on
+every image marker, a slug that does not collide with an article that already
+exists, and internal links that resolve to real published slugs — a broken
+internal link is the worst signal an article can send, and nothing checks for
+one today. All of it belongs in `rules.py` beside the citation check, where the
+same draft always earns the same verdict. The SEO reviewer keeps what is
+genuinely judgment — readability, whether the article answers the search
+intent — and gives up the measurements.
+
+**Structured data, generated from the registry.** The pipeline emits no
+JSON-LD at all. A code step at render time should produce `Article` always,
+`FAQPage` when the article answers real searched questions (and the writer
+should be asked to answer three or four of them), and `Product` when
+`related_products` is filled. The fact registry is what makes this safe:
+the schema is filled from registered, sourced values, so no model gets to
+invent a specification inside a rich result.
+
+**Internal links as strategy, not accident.** The `/articles` feed is fetched
+and offered, but no structure sits behind it. Each category gains a pillar
+article; the planner links every new article into its cluster and the pillar
+back out. Two checks come with it: an orphan check (an article nothing links
+to), and a cannibalisation check — the planner sees existing titles and
+keywords before choosing, so two articles never compete for the same query.
+
+**Keywords from the search, not the model's head.** The planner currently
+invents its keywords. The researcher already runs real searches — one more
+duty: record the questions people actually ask around the topic, so the writer
+builds its headings from real queries rather than plausible ones. The other
+half of this — knowing which queries the site already surfaces for — is Search
+Console data, and waits for phase 3.
+
 **A safety gate.** Phase 1 does not need one: every article reaches a human
 anyway, so the human *is* the gate. It becomes mandatory the moment anything
 publishes automatically. Some subjects must always reach a person regardless of
@@ -108,7 +142,24 @@ standard of evidence does not move because an article did well.
 **Search data as a second source.** View counts say what people opened;
 they say nothing about what people searched for and did not find. Search
 Console data answers that, and slots into the analyst without changing the
-architecture.
+architecture. Two of its readings are directly actionable: queries with
+impressions but few clicks name a title and meta description worth rewriting,
+and pages ranking fifth through fifteenth are the update candidates where one
+good revision moves real traffic.
+
+**A refresh pipeline.** The analyst today can only queue new topics, but much
+of organic growth comes from updating articles that are slipping. The analyst
+should be able to queue "update this article" as well as "write that one" —
+and phase 2's persistent registry is exactly the infrastructure it needs: a
+fact whose shelf life has expired is a signal that the article resting on it
+is stale. The two features complete each other.
+
+**Sources on the page.** The source audit already knows each source's
+authority tier, but that knowledge stays internal. A sources section at the
+end of each article — rendered in code from the registry, so no model can
+invent an entry — is a trust signal for readers and search engines alike, and
+gives every article outbound links to the authoritative sources it actually
+rests on.
 
 ---
 
