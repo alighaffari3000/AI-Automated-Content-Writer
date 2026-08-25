@@ -8,7 +8,8 @@ approve.
 
 from __future__ import annotations
 
-from .config import QualityConfig
+from .config import QualityConfig, SafetyConfig
+from .normalize import normalize_text
 from .schemas import (
     ArticleDraft,
     GateDecision,
@@ -32,6 +33,53 @@ def unreferenced_fact_ids(
     return sorted({fid for fid in draft.used_fact_ids if fid not in allowed})
 
 
+def must_reach_a_person(
+    draft: ArticleDraft, bundle: ResearchBundle, config: SafetyConfig
+) -> list[str]:
+    """Reasons this article needs human judgement whatever its score.
+
+    None of these say the draft is wrong. They say that being wrong here would
+    cost a reader something the pipeline cannot give back, and that no
+    arrangement of reviewers is a substitute for someone taking responsibility.
+
+    Today every article reaches a person anyway, so this changes a headline.
+    It is written now because the day autonomy arrives is the wrong day to
+    start deciding which articles it does not apply to.
+    """
+    if not config.enabled:
+        return []
+
+    used = {f.fact_id for f in bundle.facts} & set(draft.used_fact_ids)
+    facts = [f for f in bundle.facts if f.fact_id in used]
+    reasons: list[str] = []
+
+    perishable = sorted({f.kind for f in facts if f.kind in config.fact_kinds})
+    if perishable:
+        reasons.append(
+            "it states "
+            + " and ".join(perishable)
+            + (", which goes" if len(perishable) == 1 else ", which go")
+            + " stale in days"
+        )
+
+    unverified = [f.fact_id for f in facts if not f.verified and f.confidence == "LOW"]
+    if unverified:
+        reasons.append(
+            f"{len(unverified)} claim(s) could not be verified at their source: "
+            + ", ".join(sorted(unverified))
+        )
+
+    if config.terms:
+        haystack = normalize_text(f"{draft.title} {draft.excerpt} {draft.body}")
+        found = sorted(
+            {t for t in config.terms if normalize_text(t) and normalize_text(t) in haystack}
+        )
+        if found:
+            reasons.append("it touches " + ", ".join(found))
+
+    return reasons
+
+
 def evaluate_reviews(
     draft: ArticleDraft,
     bundle: ResearchBundle,
@@ -39,6 +87,7 @@ def evaluate_reviews(
     round_number: int,
     config: QualityConfig,
     measured: list[ReviewIssue] | None = None,
+    safety: SafetyConfig | None = None,
 ) -> GateDecision:
     """Turn independent reviews into one verdict.
 
@@ -52,8 +101,14 @@ def evaluate_reviews(
     critical blocks the draft, major sends it back, and minor travels with the
     decision so the next round can fix it without ever being the reason a draft
     was held.
+
+    `safety` names the subjects no score can clear. A draft that passes every
+    check and touches one of them is not approved — it is escalated, because
+    APPROVE is the word an automatic publisher will one day read, and these
+    articles must never be the ones it reads it on.
     """
     measured = measured or []
+    escalate_to_human = must_reach_a_person(draft, bundle, safety or SafetyConfig())
 
     if not reviews:
         return GateDecision(
@@ -108,10 +163,24 @@ def evaluate_reviews(
         )
 
     if not reasons:
+        passed = f"All checks passed with an average score of {average}."
+        if escalate_to_human:
+            return GateDecision(
+                verdict="ESCALATE",
+                average_score=average,
+                reason=(
+                    f"{passed} Held for a person because "
+                    + "; ".join(escalate_to_human)
+                    + "."
+                ),
+                round_number=round_number,
+                measured_issues=measured,
+                requires_human=escalate_to_human,
+            )
         return GateDecision(
             verdict="APPROVE",
             average_score=average,
-            reason=f"All checks passed with an average score of {average}.",
+            reason=passed,
             round_number=round_number,
             measured_issues=measured,
         )
@@ -128,4 +197,5 @@ def evaluate_reviews(
         blocking_issue_ids=sorted(set(blocking)),
         round_number=round_number,
         measured_issues=measured,
+        requires_human=escalate_to_human,
     )

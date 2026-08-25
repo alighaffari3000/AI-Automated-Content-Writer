@@ -146,12 +146,21 @@ article gets plain headings rather than invented questions. Knowing which
 queries the site already surfaces for is the other half, and still waits for
 phase 3.
 
-**A safety gate.** Phase 1 does not need one: every article reaches a human
-anyway, so the human *is* the gate. It becomes mandatory the moment anything
-publishes automatically. Some subjects must always reach a person regardless of
-score — medical or safety claims, legal and regulatory statements, tariffs and
-subsidies, financial promises, prices and warranties, unverified breaking news,
-and any claim about a competitor.
+**A safety gate. ✅ Shipped.** A draft that passes every check and touches one
+of these subjects is escalated rather than approved, with the reason named in
+the notification. Two of the three signals need no configuration because they
+are structural: a claim whose shelf life is measured in days (a price, a stock
+level), and a claim that could not be verified at its source. The third is a
+word list in the site's own language — medical and safety advice, legal and
+regulatory statements, tariffs and subsidies, guarantees and financial
+promises — because words are the one part of this that cannot be universal.
+Competitor claims stay with the product reviewer, which already treats them as
+critical.
+
+Today this changes a headline, since every article reaches a person anyway. It
+was built now on purpose: the day automatic publishing arrives is the wrong day
+to start deciding which articles it does not apply to, and APPROVE is the word
+that publisher will read.
 
 ---
 

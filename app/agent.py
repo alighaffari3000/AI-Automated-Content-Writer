@@ -573,6 +573,7 @@ def evaluate_gate(ctx: Context, node_input: dict[str, Any]) -> Event:
         round_number=round_number,
         config=settings.quality,
         measured=measured,
+        safety=settings.safety,
     )
 
     article_id = int(ctx.state.get("article_id", 0))
@@ -743,6 +744,7 @@ def finalize(ctx: Context, node_input: dict[str, Any]) -> Event:
             "average_score": decision.get("average_score"),
             "used_fact_ids": draft.used_fact_ids,
             "featured_image_alt": draft.featured_image_alt,
+            "requires_human": decision.get("requires_human") or [],
         },
     )
 
@@ -760,6 +762,7 @@ def finalize(ctx: Context, node_input: dict[str, Any]) -> Event:
         error="" if ok else remote,
     )
 
+    needs_person = decision.get("requires_human") or []
     headline = (
         "A draft is ready for review"
         if verdict == "APPROVE"
@@ -772,6 +775,10 @@ def finalize(ctx: Context, node_input: dict[str, Any]) -> Event:
         f"average score {decision.get('average_score')}",
         f"Reason: {decision.get('reason', '')}",
     ]
+    if needs_person:
+        # Said separately from the reason, because this is the part that asks
+        # the reader of this message to do something rather than to be informed.
+        lines.append("⚠️ Read this one properly: " + "; ".join(needs_person))
     if not ok:
         lines.append(f"⚠️ Could not reach the site: {remote}")
     message = "\n".join(lines)

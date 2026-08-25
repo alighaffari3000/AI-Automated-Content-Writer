@@ -8,9 +8,16 @@ from __future__ import annotations
 
 import pytest
 
-from app.config import QualityConfig
+from app.config import QualityConfig, SafetyConfig
 from app.rules import evaluate_reviews, unreferenced_fact_ids
-from app.schemas import ArticleDraft, Fact, ResearchBundle, ReviewIssue, ReviewResult
+from app.schemas import (
+    ArticleDraft,
+    Fact,
+    GateDecision,
+    ResearchBundle,
+    ReviewIssue,
+    ReviewResult,
+)
 
 
 def measured(severity: str, issue_id: str = "SEO-TITLE-LONG") -> ReviewIssue:
@@ -22,6 +29,7 @@ def measured(severity: str, issue_id: str = "SEO-TITLE-LONG") -> ReviewIssue:
         problem="a measurement",
         required_fix="a fix",
     )
+
 
 CONFIG = QualityConfig(max_revision_rounds=3, min_average_score=8.0, min_seo_score=7.0)
 
@@ -242,6 +250,94 @@ def test_measurements_reach_the_judge_even_when_the_run_is_escalating():
     )
     assert decision.verdict == "ESCALATE"
     assert [i.issue_id for i in decision.measured_issues] == ["SEO-LINK-BROKEN-1"]
+
+
+SAFETY = SafetyConfig(enabled=True, terms=("subsidy", "یارانه"), fact_kinds=("price",))
+
+
+def priced_bundle(kind: str = "price", **overrides) -> ResearchBundle:
+    fields = {
+        "fact_id": "FACT-001",
+        "claim": "a claim",
+        "source": "a source",
+        "evidence": "a passage",
+        "confidence": "HIGH",
+        "kind": kind,
+        "verified": True,
+    }
+    fields.update(overrides)
+    return ResearchBundle(angle="an angle", outline=["one"], facts=[Fact(**fields)])
+
+
+def gate(draft: ArticleDraft, bundle: ResearchBundle, safety=SAFETY) -> GateDecision:
+    return evaluate_reviews(
+        draft=draft,
+        bundle=bundle,
+        reviews=clean_reviews(9.0),
+        round_number=1,
+        config=CONFIG,
+        safety=safety,
+    )
+
+
+def test_a_flawless_article_about_prices_is_still_held_for_a_person():
+    """Nothing is wrong with it. Being wrong about a price is not recoverable."""
+    decision = gate(make_draft("FACT-001"), priced_bundle())
+    assert decision.verdict == "ESCALATE"
+    assert "goes stale in days" in decision.reason
+    assert decision.requires_human
+
+
+def test_a_subject_a_person_must_see_is_recognised_in_the_site_s_own_language():
+    draft = ArticleDraft(
+        title="یارانه انرژی خورشیدی",
+        slug="solar-subsidy",
+        excerpt="یک خلاصه.",
+        body="متن دربارهٔ یارانه‌ها.",  # noqa: RUF001
+        used_fact_ids=["FACT-001"],
+    )
+    decision = gate(draft, priced_bundle(kind="general"))
+    assert decision.verdict == "ESCALATE"
+    assert "یارانه" in decision.reason
+
+
+def test_a_claim_nobody_could_verify_reaches_a_person():
+    bundle = priced_bundle(kind="general", verified=False, confidence="LOW")
+    decision = gate(make_draft("FACT-001"), bundle)
+    assert decision.verdict == "ESCALATE"
+    assert "could not be verified" in decision.reason
+
+
+def test_an_ordinary_article_is_approved_as_before():
+    decision = gate(make_draft("FACT-001"), priced_bundle(kind="specification"))
+    assert decision.verdict == "APPROVE"
+    assert decision.requires_human == []
+
+
+def test_a_fact_the_draft_never_used_does_not_hold_it_back():
+    """The registry may hold a price the article decided not to state."""
+    decision = gate(make_draft(), priced_bundle())
+    assert decision.verdict == "APPROVE"
+
+
+def test_the_safety_gate_can_be_turned_off():
+    decision = gate(
+        make_draft("FACT-001"), priced_bundle(), safety=SafetyConfig(enabled=False)
+    )
+    assert decision.verdict == "APPROVE"
+
+
+def test_a_held_article_that_also_failed_a_check_still_says_both():
+    decision = evaluate_reviews(
+        draft=make_draft("FACT-001", "FACT-999"),
+        bundle=priced_bundle(),
+        reviews=clean_reviews(9.0),
+        round_number=1,
+        config=CONFIG,
+        safety=SAFETY,
+    )
+    assert decision.verdict == "REVISE", "a defect is fixed before a person reads it"
+    assert decision.requires_human, "and the reason it needs one travels with it"
 
 
 def test_unreferenced_fact_ids_reports_each_id_once():

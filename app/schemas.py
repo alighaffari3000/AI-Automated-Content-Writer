@@ -202,6 +202,14 @@ class GateDecision(BaseModel):
     reason: str
     blocking_issue_ids: list[str] = Field(default_factory=list)
     round_number: int = 1
+    requires_human: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Why this article must reach a person regardless of its score. "
+            "Not defects: subjects where being wrong costs the reader something "
+            "no reviewer can give back."
+        ),
+    )
     measured_issues: list[ReviewIssue] = Field(
         default_factory=list,
         description=(

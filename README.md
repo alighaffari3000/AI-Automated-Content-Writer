@@ -109,6 +109,14 @@ back to (`categories pillar <id> <slug>`), and pages nothing currently links to
 are handed to the writer as preferred link targets, so orphans get fixed as a
 side effect of writing the next piece.
 
+**Some subjects are never just approved.** An article can pass every check and
+still be one nobody should publish unread — a price, a subsidy, a regulation, a
+safety claim, or a claim nobody could verify at its source. The gate escalates
+those to a person by name instead of approving them, and says why in the
+notification. Today every article reaches a person anyway, so this changes a
+headline; it exists now because the day automatic publishing arrives is the
+wrong day to start deciding which articles it does not apply to.
+
 **Human approval is the last word.** Every article arrives at the site as a
 draft. Publishing automatically is a decision for later, once the numbers earn
 it.

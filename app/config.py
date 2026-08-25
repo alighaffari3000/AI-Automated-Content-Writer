@@ -113,6 +113,30 @@ class QualityConfig:
 
 
 @dataclass(frozen=True)
+class SafetyConfig:
+    """Subjects that must reach a person, whatever the reviewers thought.
+
+    Not a quality check — an article can be flawless and still be one nobody
+    should publish unread. Medical and safety advice, legal and regulatory
+    statements, tariffs and subsidies, prices and warranties: being wrong about
+    these costs a reader money or worse, and the pipeline has no way to know it
+    was wrong.
+
+    Two of the three signals need no configuration, because they are structural:
+    a claim whose shelf life is measured in days, and a claim nobody could
+    verify at its source. The third is a word list, and words are the one part
+    of this that cannot be universal — they are in the site's own language.
+    """
+
+    enabled: bool = field(default_factory=lambda: _env_bool("SAFETY_GATE", True))
+    terms: tuple[str, ...] = field(default_factory=lambda: _env_tuple("SAFETY_TERMS"))
+    fact_kinds: tuple[str, ...] = field(
+        default_factory=lambda: _env_tuple("SAFETY_FACT_KINDS")
+        or ("price", "availability")
+    )
+
+
+@dataclass(frozen=True)
 class SourceConfig:
     """Who is worth believing, and how hard to check them.
 
@@ -292,6 +316,7 @@ class Settings:
     site: SiteConfig = field(default_factory=SiteConfig)
     content: ContentConfig = field(default_factory=ContentConfig)
     quality: QualityConfig = field(default_factory=QualityConfig)
+    safety: SafetyConfig = field(default_factory=SafetyConfig)
     sources: SourceConfig = field(default_factory=SourceConfig)
     registry: RegistryConfig = field(default_factory=RegistryConfig)
     seo: SeoConfig = field(default_factory=SeoConfig)
