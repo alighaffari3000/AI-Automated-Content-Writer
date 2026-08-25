@@ -35,6 +35,10 @@ def _env_bool(name: str, default: bool = False) -> bool:
     return raw in {"1", "true", "yes", "on"}
 
 
+def _env_tuple(name: str) -> tuple[str, ...]:
+    return tuple(part.strip() for part in _env(name).split(",") if part.strip())
+
+
 @dataclass(frozen=True)
 class Models:
     """Model per role. Reviewers run every day, so they use the cheap tier."""
@@ -49,6 +53,10 @@ class SiteConfig:
 
     name: str = field(default_factory=lambda: _env("SITE_NAME", "the site"))
     api_url: str = field(default_factory=lambda: _env("SITE_API_URL"))
+    # Where readers see the articles, as opposed to where the pipeline posts
+    # them. Optional: it lets the gate recognise an absolute link back to the
+    # site as an internal one, and puts real URLs in the structured data.
+    public_url: str = field(default_factory=lambda: _env("SITE_PUBLIC_URL"))
     api_token: str = field(default_factory=lambda: _env("SITE_API_TOKEN"))
     timeout_seconds: float = field(
         default_factory=lambda: _env_float("SITE_API_TIMEOUT", 30.0)
@@ -102,6 +110,38 @@ class QualityConfig:
         default_factory=lambda: _env_float("MIN_AVERAGE_SCORE", 8.0)
     )
     min_seo_score: float = field(default_factory=lambda: _env_float("MIN_SEO_SCORE", 7.0))
+
+
+@dataclass(frozen=True)
+class SeoConfig:
+    """The measurable half of SEO.
+
+    These are the numbers the gate counts against, not opinions a reviewer
+    holds. They live here rather than in `seo.py` because a site with a
+    different search presence should be able to move them without touching
+    code — and because a threshold hidden in a module is one nobody audits.
+    """
+
+    title_max: int = field(default_factory=lambda: _env_int("SEO_TITLE_MAX", 60))
+    title_min: int = field(default_factory=lambda: _env_int("SEO_TITLE_MIN", 25))
+    description_max: int = field(
+        default_factory=lambda: _env_int("SEO_DESCRIPTION_MAX", 165)
+    )
+    description_min: int = field(
+        default_factory=lambda: _env_int("SEO_DESCRIPTION_MIN", 110)
+    )
+    alt_min: int = field(default_factory=lambda: _env_int("SEO_ALT_MIN", 10))
+    # Pages that exist but are not articles, products or categories — an about
+    # page, a contact form. Without them a perfectly good link looks broken.
+    known_paths: tuple[str, ...] = field(
+        default_factory=lambda: _env_tuple("SEO_KNOWN_PATHS")
+    )
+    # How many real questions an article must answer before it is described as
+    # an FAQ to a search engine. Two is a section; one is a coincidence.
+    min_faq_entries: int = field(default_factory=lambda: _env_int("SEO_MIN_FAQ", 2))
+    structured_data: bool = field(
+        default_factory=lambda: _env_bool("SEO_STRUCTURED_DATA", True)
+    )
 
 
 @dataclass(frozen=True)
@@ -169,6 +209,7 @@ class Settings:
     site: SiteConfig = field(default_factory=SiteConfig)
     content: ContentConfig = field(default_factory=ContentConfig)
     quality: QualityConfig = field(default_factory=QualityConfig)
+    seo: SeoConfig = field(default_factory=SeoConfig)
     images: ImageConfig = field(default_factory=ImageConfig)
     cost: CostConfig = field(default_factory=CostConfig)
     notify: NotifyConfig = field(default_factory=NotifyConfig)

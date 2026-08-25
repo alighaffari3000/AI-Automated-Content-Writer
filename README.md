@@ -66,6 +66,21 @@ so an invented source cannot survive by sounding convincing. Below the score
 bar sends it back. Only when every check passes does a draft ship, and when the
 rounds run out it goes to a human instead of shipping anyway.
 
+**What can be counted is not scored.** Most on-page SEO is measurement, not
+opinion: title and description lengths, one top-level heading and no skipped
+levels, alt text on every picture, a slug that is not already taken, internal
+links that resolve to pages the site really has. `app/seo.py` measures those
+and the gate enforces them — a collision or a link into a 404 blocks, a length
+sends the draft back, polish travels with the decision without costing a round.
+The SEO reviewer keeps what is genuinely judgement: whether the article answers
+what the searcher asked, and whether it reads well.
+
+**Structured data comes from checked values.** `app/structured_data.py` builds
+the JSON-LD in code: `Article` always, `FAQPage` when the writer answered real
+questions in its headings, and `Product` filled from the site's own catalogue.
+No model writes a field, so a specification cannot reach a rich result by way
+of a sentence.
+
 **The judge only runs when needed.** It never approves anything. On a revision
 it merges three sets of findings into one ordered list of edits, resolving
 contradictions, so the next round fixes named issues instead of rewriting the
@@ -114,13 +129,20 @@ Four endpoints under `SITE_API_URL`, all authenticated with
 
 | Endpoint | Purpose |
 |---|---|
-| `POST /posts` | create the draft (`title`, `slug`, `excerpt`, `body`, `status`, `meta`) |
+| `POST /posts` | create the draft (`title`, `slug`, `excerpt`, `body`, `status`, `structured_data`, `meta`) |
 | `GET /products` | catalogue entries the article may mention — the source of truth for specifications |
 | `GET /articles` | what is already published, for internal links and to avoid repeats |
 | `GET /stats` | per-article view counts (used later, by the weekly analyst) |
 
 Only `POST /posts` is required. The reads degrade quietly: without
-`/products` the product reviewer simply has nothing to check against.
+`/products` the product reviewer simply has nothing to check against, and
+without `/articles` the gate cannot tell a good internal link from a broken one,
+so it stops checking rather than guessing.
+
+`structured_data` arrives as a list of JSON-LD objects. A site that ignores the
+field loses nothing; one that renders each object inside a
+`<script type="application/ld+json">` tag gets rich results built from values
+that were already verified.
 
 ## Configuration
 
@@ -134,6 +156,9 @@ The settings worth knowing:
 | `CONTENT_DOMAIN` / `CONTENT_AUDIENCE` / `CONTENT_TONE` | what the site is about and who reads it |
 | `MAX_REVISION_ROUNDS` | how many times a draft may be sent back (default 3) |
 | `MIN_AVERAGE_SCORE` / `MIN_SEO_SCORE` | the bars the gate enforces |
+| `SEO_TITLE_MAX` / `SEO_DESCRIPTION_MAX` | the lengths the gate counts, in characters |
+| `SEO_KNOWN_PATHS` | pages that exist but are neither articles nor products, so a link to them is not read as broken |
+| `SITE_PUBLIC_URL` | where readers see the site, for link checking and structured data |
 | `DRY_RUN` | run the whole pipeline without sending anything |
 
 ## Layout
@@ -142,6 +167,8 @@ The settings worth knowing:
 app/
   agent.py        the workflow graph — the shape of a run
   rules.py        the gate: the only thing that decides what ships
+  seo.py          what can be measured about a draft, measured
+  structured_data.py  JSON-LD, built from the registry and the catalogue
   schemas.py      the contracts every stage speaks
   prompts.py      agent instructions
   config.py       everything site-specific, read from the environment

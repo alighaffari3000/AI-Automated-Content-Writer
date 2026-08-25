@@ -10,7 +10,7 @@ state — nothing about a particular company belongs in this file.
 
 from __future__ import annotations
 
-from .config import ContentConfig, ImageConfig
+from .config import ContentConfig, ImageConfig, SeoConfig
 
 SCORING_RULE = """
 Score 0-10, and calibrate. A competent, publishable draft with nothing seriously
@@ -189,7 +189,9 @@ win:
 """.rstrip()
 
 
-def writer_instruction(content: ContentConfig, images: ImageConfig) -> str:
+def writer_instruction(
+    content: ContentConfig, images: ImageConfig, seo: SeoConfig
+) -> str:
     return f"""
 Write the article in {content.language_name}. Tone: {content.tone}. Audience:
 {content.audience}. Length: {content.min_words}-{content.max_words} words.
@@ -220,14 +222,27 @@ Hard rules:
   English.
 - body is Markdown: a short opening that states what the reader will get,
   headings from the outline, and a close that does not oversell.
+- Body headings start at `##`. The site renders the article title as the page's
+  only top-level heading, so a `#` heading in the body competes with it. Do not
+  skip levels either: a `###` belongs under a `##`, never under nothing.
+- Where the subject has questions people genuinely ask, write two or more of
+  those section headings as the question itself, ending in a question mark, and
+  answer it in the first paragraph beneath. Those pairs are published as
+  structured data, so the answer must stand on its own without the paragraphs
+  around it — and a heading phrased as a question the section does not actually
+  answer is worse than a plain one.
 
 Search listing:
 - seo_title: how this should read in a search result. Lead with the words
-  someone would actually type, then what they get. Around 60 characters — a
-  longer one is cut off mid-word. It may differ from the article title.
-- meta_description: the snippet under it. Say what the reader gets and why it
-  is worth opening, in about 150 characters. Not a copy of the excerpt, and
-  not a keyword list.
+  someone would actually type, then what they get. Up to {seo.title_max} characters
+  — a longer one is cut off mid-word. Write it as its own line rather than
+  repeating the article title.
+- meta_description: the snippet under it. Say what the reader gets and why it is
+  worth opening, in {seo.description_min}-{seo.description_max} characters. Not a
+  copy of the excerpt, and not a keyword list.
+
+These lengths are counted in code after you write, and a draft that misses them
+comes straight back — so count them now rather than approximately.
 
 Filing and linking:
 - category must be one of the site's existing category slugs, listed below.
@@ -349,20 +364,28 @@ duplicate):
 Draft:
 {{draft}}
 
-Check:
-1. The title reads like something a person would click and states the subject
-   plainly. seo_title and meta_description are filled, are not copies of the
-   title and excerpt, and would survive being cut at roughly 60 and 150
-   characters. An empty or duplicated one is a major issue — it is what a
-   searcher sees before they see anything else.
-2. Heading structure is logical and scannable; no wall of text.
-3. Target keywords appear where they belong — title, opening, headings — and
-   nowhere they read as stuffing. A keyword in a different script or language
-   from the article body, or a term glossed in parentheses purely to fit a
-   keyword in, is a real defect: flag it as major, not minor.
-4. The language is correct and natural for a native reader: grammar,
+Lengths, heading levels, alt text, the slug and whether internal links resolve
+are all measured in code before you see this and enforced by the gate. Do not
+spend your score on them — they are counted more reliably than either of us can
+count. Judge what cannot be counted:
+
+1. Search intent. Someone typing these keywords has a question; does this
+   article answer it, and answer it near the top rather than after four
+   paragraphs of preamble? An article that ranks and disappoints is worse than
+   one that never ranks.
+2. The title and the snippet earn the click honestly. seo_title reads like
+   something a person would choose among ten results, and meta_description
+   promises what the article actually delivers. Overselling here is a major
+   issue: it buys a click and loses a reader.
+3. The subject is stated plainly where a reader lands — the opening says what
+   this is about without keyword padding. A keyword in a different script or
+   language from the article body, or a term glossed in parentheses purely to
+   fit a keyword in, is a real defect: flag it as major, not minor.
+4. The article is organised so a reader can find the part they came for, and
+   each section earns its heading.
+5. The language is correct and natural for a native reader: grammar,
    punctuation, and sentences that do not read as translated or machine-made.
-5. Tone matches: {content.tone}. No hype, no empty superlatives.
+6. Tone matches: {content.tone}. No hype, no empty superlatives.
 
 {SCORING_RULE}
 Issue ids start with SEO-. Set reviewer to exactly "seo_editorial".
@@ -381,12 +404,17 @@ Gate reason:
 Reviews:
 {reviews_json}
 
+Measured defects. These were counted in code rather than judged, so they are
+not opinions and are not open to argument: a title of 78 characters is 78
+characters. Fold each one into your instructions as stated.
+{measured_issues?}
+
 Draft:
 {draft}
 
 Produce instructions that:
 - Address every critical issue first, then major, then minor — and only issues
-  the reviewers actually raised.
+  the reviewers actually raised or the measurements found.
 - Name the issue id each instruction resolves, so the next round is traceable.
 - Merge duplicates: when two reviewers describe the same defect, write one
   instruction.

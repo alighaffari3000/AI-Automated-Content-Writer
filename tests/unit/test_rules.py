@@ -12,6 +12,17 @@ from app.config import QualityConfig
 from app.rules import evaluate_reviews, unreferenced_fact_ids
 from app.schemas import ArticleDraft, Fact, ResearchBundle, ReviewIssue, ReviewResult
 
+
+def measured(severity: str, issue_id: str = "SEO-TITLE-LONG") -> ReviewIssue:
+    """One finding of the kind the gate counts rather than judges."""
+    return ReviewIssue(
+        issue_id=issue_id,
+        severity=severity,  # type: ignore[arg-type]
+        location="seo_title",
+        problem="a measurement",
+        required_fix="a fix",
+    )
+
 CONFIG = QualityConfig(max_revision_rounds=3, min_average_score=8.0, min_seo_score=7.0)
 
 
@@ -176,6 +187,61 @@ def test_missing_reviews_never_read_as_approval():
         config=CONFIG,
     )
     assert decision.verdict == "ESCALATE"
+
+
+def test_a_measured_critical_blocks_a_draft_every_reviewer_liked():
+    """A slug collision or a link into a 404 needs no reviewer to notice it."""
+    decision = evaluate_reviews(
+        draft=make_draft(),
+        bundle=make_bundle(),
+        reviews=clean_reviews(10.0),
+        round_number=1,
+        config=CONFIG,
+        measured=[measured("critical", "SEO-SLUG-TAKEN")],
+    )
+    assert decision.verdict == "REVISE"
+    assert decision.blocking_issue_ids == ["SEO-SLUG-TAKEN"]
+
+
+def test_a_measured_major_sends_the_draft_back_without_blocking_it():
+    decision = evaluate_reviews(
+        draft=make_draft(),
+        bundle=make_bundle(),
+        reviews=clean_reviews(10.0),
+        round_number=1,
+        config=CONFIG,
+        measured=[measured("major")],
+    )
+    assert decision.verdict == "REVISE"
+    assert decision.blocking_issue_ids == []
+    assert "SEO-TITLE-LONG" in decision.reason
+
+
+def test_a_measured_minor_never_costs_a_draft_a_round():
+    """Polish travels with the decision; it is not a reason to hold an article."""
+    decision = evaluate_reviews(
+        draft=make_draft(),
+        bundle=make_bundle(),
+        reviews=clean_reviews(10.0),
+        round_number=1,
+        config=CONFIG,
+        measured=[measured("minor")],
+    )
+    assert decision.verdict == "APPROVE"
+    assert [i.issue_id for i in decision.measured_issues] == ["SEO-TITLE-LONG"]
+
+
+def test_measurements_reach_the_judge_even_when_the_run_is_escalating():
+    decision = evaluate_reviews(
+        draft=make_draft(),
+        bundle=make_bundle(),
+        reviews=[],
+        round_number=1,
+        config=CONFIG,
+        measured=[measured("critical", "SEO-LINK-BROKEN-1")],
+    )
+    assert decision.verdict == "ESCALATE"
+    assert [i.issue_id for i in decision.measured_issues] == ["SEO-LINK-BROKEN-1"]
 
 
 def test_unreferenced_fact_ids_reports_each_id_once():

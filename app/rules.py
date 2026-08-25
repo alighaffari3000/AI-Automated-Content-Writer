@@ -9,7 +9,13 @@ approve.
 from __future__ import annotations
 
 from .config import QualityConfig
-from .schemas import ArticleDraft, GateDecision, ResearchBundle, ReviewResult
+from .schemas import (
+    ArticleDraft,
+    GateDecision,
+    ResearchBundle,
+    ReviewIssue,
+    ReviewResult,
+)
 
 SEO_REVIEWER = "seo_editorial"
 
@@ -32,19 +38,30 @@ def evaluate_reviews(
     reviews: list[ReviewResult],
     round_number: int,
     config: QualityConfig,
+    measured: list[ReviewIssue] | None = None,
 ) -> GateDecision:
     """Turn independent reviews into one verdict.
 
     Returns APPROVE only when every mandatory check passes. Anything else is
     REVISE while rounds remain, and ESCALATE once they run out — the pipeline
     never downgrades a failing draft into a published one.
+
+    `measured` carries the findings that were counted rather than judged — the
+    citation check's neighbours from `seo.py`. They are graded by severity and
+    not by score, because a title of 78 characters is not a matter of degree:
+    critical blocks the draft, major sends it back, and minor travels with the
+    decision so the next round can fix it without ever being the reason a draft
+    was held.
     """
+    measured = measured or []
+
     if not reviews:
         return GateDecision(
             verdict="ESCALATE",
             average_score=0.0,
             reason="No reviews were produced; refusing to pass the draft through.",
             round_number=round_number,
+            measured_issues=measured,
         )
 
     blocking: list[str] = []
@@ -64,6 +81,20 @@ def evaluate_reviews(
             blocking.extend(criticals)
             reasons.append(f"{review.reviewer} raised {len(criticals)} critical issue(s).")
 
+    measured_critical = [i for i in measured if i.severity == "critical"]
+    if measured_critical:
+        blocking.extend(i.issue_id for i in measured_critical)
+        reasons.append(
+            f"{len(measured_critical)} measured defect(s) block publication: "
+            + ", ".join(i.issue_id for i in measured_critical)
+        )
+    measured_major = [i for i in measured if i.severity == "major"]
+    if measured_major:
+        reasons.append(
+            f"{len(measured_major)} measured defect(s) need fixing: "
+            + ", ".join(i.issue_id for i in measured_major)
+        )
+
     average = round(sum(r.score for r in reviews) / len(reviews), 2)
     if average < config.min_average_score:
         reasons.append(
@@ -82,6 +113,7 @@ def evaluate_reviews(
             average_score=average,
             reason=f"All checks passed with an average score of {average}.",
             round_number=round_number,
+            measured_issues=measured,
         )
 
     exhausted = round_number >= config.max_revision_rounds
@@ -95,4 +127,5 @@ def evaluate_reviews(
         ),
         blocking_issue_ids=sorted(set(blocking)),
         round_number=round_number,
+        measured_issues=measured,
     )

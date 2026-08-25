@@ -171,6 +171,14 @@ class GateDecision(BaseModel):
     reason: str
     blocking_issue_ids: list[str] = Field(default_factory=list)
     round_number: int = 1
+    measured_issues: list[ReviewIssue] = Field(
+        default_factory=list,
+        description=(
+            "What the gate counted rather than judged: lengths, heading levels, "
+            "alt text, slug collisions, links that do not resolve. Carried in the "
+            "reviewers' own shape so the judge needs no special case for them."
+        ),
+    )
 
 
 class RevisionDirective(BaseModel):

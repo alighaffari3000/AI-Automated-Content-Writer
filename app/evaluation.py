@@ -29,6 +29,7 @@ from google.adk.workflow import JoinNode, Workflow
 from google.genai import types
 
 from . import agent as pipeline
+from . import seo
 from .config import settings
 from .cost import RunCost, usage_from_event
 from .rules import evaluate_reviews
@@ -138,12 +139,23 @@ async def run_scenario(scenario: Scenario, cost: RunCost) -> ScenarioResult:
             except Exception as exc:  # noqa: BLE001
                 logger.warning("%s: unusable review from %s: %s", scenario.id, node_name, exc)
 
+    draft = ArticleDraft(**scenario.draft)
+    bundle = ResearchBundle(**scenario.bundle)
+
+    # The measurements ride along exactly as they do in a real run, so the
+    # verdict here is the verdict the pipeline would reach. They cannot rescue
+    # a scenario, though: a defect only counts as caught when the reviewer it
+    # was planted for names it. The site index is empty because these drafts
+    # belong to no site, which switches off the checks that need one.
     decision = evaluate_reviews(
-        draft=ArticleDraft(**scenario.draft),
-        bundle=ResearchBundle(**scenario.bundle),
+        draft=draft,
+        bundle=bundle,
         reviews=reviews,
         round_number=1,
         config=settings.quality,
+        measured=seo.defects(
+            draft, seo.SiteIndex(), bundle.target_keywords, settings.seo
+        ),
     )
 
     threshold = SEVERITY_RANK[scenario.expect_min_severity]

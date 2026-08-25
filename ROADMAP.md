@@ -84,25 +84,25 @@ asserting on it produces flaky tests that teach nothing. An eval dataset with
 LLM-judge scoring, run against fixed inputs, is what turns "the reviewers seem
 generous" into a number that can be tracked across prompt changes.
 
-**The measurable half of SEO moves into the gate.** Today every SEO
-judgment is a model's score, but most on-page SEO is measurement, not opinion:
-title and meta description length, exactly one H1 and an unbroken heading
-hierarchy, the target keyword present in the title and the opening, alt text on
-every image marker, a slug that does not collide with an article that already
-exists, and internal links that resolve to real published slugs — a broken
-internal link is the worst signal an article can send, and nothing checks for
-one today. All of it belongs in `rules.py` beside the citation check, where the
-same draft always earns the same verdict. The SEO reviewer keeps what is
-genuinely judgment — readability, whether the article answers the search
-intent — and gives up the measurements.
+**The measurable half of SEO moves into the gate. ✅ Shipped.** `app/seo.py`
+measures; `rules.py` decides, beside the citation check. Title and description
+lengths, no H1 inside the body and no skipped heading levels, alt text on every
+image marker, the target keyword in the title and the opening, a slug that does
+not collide with a page the site already has, and internal links that resolve
+to something the site reported. Severity is
+graded rather than scored: a collision or a link into a 404 blocks, a length
+sends the draft back, polish is reported without costing a round. The keyword
+check applies only to keywords written in the article's own script — demanding
+an English phrase in a Persian title would force the exact defect the reviewers
+flag. The SEO reviewer gave up the measurements and kept the judgement.
 
-**Structured data, generated from the registry.** The pipeline emits no
-JSON-LD at all. A code step at render time should produce `Article` always,
-`FAQPage` when the article answers real searched questions (and the writer
-should be asked to answer three or four of them), and `Product` when
-`related_products` is filled. The fact registry is what makes this safe:
-the schema is filled from registered, sourced values, so no model gets to
-invent a specification inside a rich result.
+**Structured data, generated from the registry. ✅ Shipped.**
+`app/structured_data.py` emits `Article` always, `FAQPage` once the writer has
+answered two or more real questions in its headings, and `Product` for each
+catalogue entry the article discusses — filled from the catalogue's own fields,
+never from the prose. No date is invented: a human decides when this publishes,
+so only the site knows it. The blocks travel with the post as
+`structured_data`, for the site to embed.
 
 **Internal links as strategy, not accident.** The `/articles` feed is fetched
 and offered, but no structure sits behind it. Each category gains a pillar

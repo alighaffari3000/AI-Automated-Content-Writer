@@ -136,6 +136,16 @@ def cmd_check(args: argparse.Namespace) -> int:
         ("database", settings.db_path),
         ("max rounds", str(settings.quality.max_revision_rounds)),
         ("score bar", f"avg >= {settings.quality.min_average_score}, seo >= {settings.quality.min_seo_score}"),
+        (
+            "measured",
+            f"title <= {settings.seo.title_max}, "
+            f"description {settings.seo.description_min}-{settings.seo.description_max}, "
+            f"faq from {settings.seo.min_faq_entries} question(s)",
+        ),
+        (
+            "structured data",
+            "on" if settings.seo.structured_data else "off",
+        ),
         ("dry run", "yes" if settings.dry_run else "no"),
     ]
     width = max(len(k) for k, _ in rows)

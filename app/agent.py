@@ -35,7 +35,7 @@ from google.adk.tools import google_search
 from google.adk.workflow import DEFAULT_ROUTE, JoinNode, Workflow
 from google.genai import types
 
-from . import prompts
+from . import prompts, seo, structured_data
 from .config import settings
 from .images import ImageGenerator, ImageRequest, find_markers, replace_markers
 from .notify import build_notifier
@@ -95,6 +95,22 @@ def _model(name: str) -> Gemini:
 
 def _as_json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, indent=2, default=str)
+
+
+def _from_state(ctx: Context, key: str) -> list[Any]:
+    """Read back something this pipeline put into state as JSON.
+
+    State also carries prose for the prompts — "(none available)" where a fetch
+    came back empty — so anything unparseable is simply no data.
+    """
+    raw = ctx.state.get(key)
+    if isinstance(raw, list):
+        return raw
+    try:
+        parsed = json.loads(raw or "")
+    except (TypeError, ValueError):
+        return []
+    return parsed if isinstance(parsed, list) else []
 
 
 # --------------------------------------------------------------------- nodes
@@ -159,6 +175,14 @@ def load_run_context(ctx: Context, node_input: Any) -> Event:
             "site_products": _as_json(products) if products else "(none available)",
             "site_articles": _as_json(
                 [a.get("title", "") for a in articles] + recent
+            ),
+            # The addresses that exist, kept apart from the titles the prompts
+            # read: the gate checks links and slugs against these, and a list
+            # meant for a model to read is not a list code can check against.
+            "site_slugs": (
+                seo.slugs_from(articles)
+                + seo.slugs_from(products)
+                + seo.slugs_from(taxonomy.get("categories") or [])
             ),
             "site_taxonomy": (
                 _as_json(taxonomy)
@@ -294,10 +318,25 @@ def persist_registry(ctx: Context, node_input: Any) -> Event:
     )
 
 
+def site_index(ctx: Context) -> seo.SiteIndex:
+    """The pages the site said it has, as the gate needs them."""
+    return seo.SiteIndex.from_slugs(
+        [str(s) for s in _from_state(ctx, "site_slugs")],
+        extra_paths=settings.seo.known_paths,
+        public_url=settings.site.public_url,
+    )
+
+
 def evaluate_gate(ctx: Context, node_input: dict[str, Any]) -> Event:
     """The gate: plain code, one verdict, always the same answer for the same input.
 
     `node_input` arrives from the join as {reviewer_node_name: review_dict}.
+
+    Two kinds of finding meet here. The reviewers bring judgement, scored. The
+    measurements bring counting — lengths, heading levels, alt text, a slug
+    that is already taken, a link that resolves to nothing — and those are not
+    scored at all, because the same draft must always earn the same verdict on
+    them.
     """
     reviews: list[ReviewResult] = []
     for node_name in REVIEWER_NODES:
@@ -314,12 +353,17 @@ def evaluate_gate(ctx: Context, node_input: dict[str, Any]) -> Event:
     bundle = ResearchBundle(**(ctx.state.get("research_bundle") or {}))
     round_number = int(ctx.state.get("round_number", 0)) + 1
 
+    measured = seo.defects(
+        draft, site_index(ctx), bundle.target_keywords, settings.seo
+    )
+
     decision = evaluate_reviews(
         draft=draft,
         bundle=bundle,
         reviews=reviews,
         round_number=round_number,
         config=settings.quality,
+        measured=measured,
     )
 
     article_id = int(ctx.state.get("article_id", 0))
@@ -336,10 +380,11 @@ def evaluate_gate(ctx: Context, node_input: dict[str, Any]) -> Event:
             )
 
     logger.info(
-        "Round %s verdict: %s (avg %s) - %s",
+        "Round %s verdict: %s (avg %s, %s measured defect(s)) - %s",
         round_number,
         decision.verdict,
         decision.average_score,
+        len(measured),
         decision.reason,
     )
 
@@ -354,6 +399,11 @@ def evaluate_gate(ctx: Context, node_input: dict[str, Any]) -> Event:
             "gate_reason": decision.reason,
             "gate_decision": decision.model_dump(),
             "reviews_json": _as_json([r.model_dump() for r in reviews]),
+            "measured_issues": (
+                _as_json([i.model_dump() for i in measured])
+                if measured
+                else "(nothing measurable is wrong with the draft)"
+            ),
         },
     )
 
@@ -443,6 +493,26 @@ def finalize(ctx: Context, node_input: dict[str, Any]) -> Event:
 
     illustrated_body, featured_url, images_made = illustrate(draft)
 
+    # Built after illustration so the FAQ answers match the body that ships,
+    # and from the catalogue rather than the prose, so a product specification
+    # cannot reach a rich result by way of a sentence.
+    bundle_data = ctx.state.get("research_bundle") or {}
+    schema_blocks = structured_data.build(
+        draft,
+        body=illustrated_body,
+        site=settings.site,
+        content=settings.content,
+        config=settings.seo,
+        products=_from_state(ctx, "site_products"),
+        keywords=list(bundle_data.get("target_keywords") or []),
+        featured_image=featured_url,
+    )
+    if schema_blocks:
+        logger.info(
+            "Structured data: %s",
+            ", ".join(block.get("@type", "?") for block in schema_blocks),
+        )
+
     ok, remote = get_site().create_post(
         title=draft.title,
         slug=draft.slug,
@@ -456,6 +526,7 @@ def finalize(ctx: Context, node_input: dict[str, Any]) -> Event:
         meta_description=draft.meta_description,
         related_products=draft.related_products,
         related_solutions=draft.related_solutions,
+        structured_data=schema_blocks,
         meta={
             "generated_by": "ai-content-writer",
             "verdict": verdict,
@@ -584,7 +655,9 @@ def build_writer() -> LlmAgent:
     return LlmAgent(
         name="writer",
         model=_model(settings.models.author),
-        instruction=prompts.writer_instruction(settings.content, settings.images),
+        instruction=prompts.writer_instruction(
+            settings.content, settings.images, settings.seo
+        ),
         output_schema=ArticleDraft,
         output_key="draft",
     )

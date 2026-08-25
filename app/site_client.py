@@ -146,6 +146,7 @@ class SiteClient:
         meta_description: str = "",
         related_products: list[str] | None = None,
         related_solutions: list[str] | None = None,
+        structured_data: list[dict[str, Any]] | None = None,
         meta: dict[str, Any] | None = None,
     ) -> tuple[bool, str]:
         """Send the article over. Returns (ok, remote id or error message).
@@ -153,6 +154,11 @@ class SiteClient:
         Both forms of the body travel: Markdown as written, and HTML ready to
         store. Sites keep one or the other, and converting here spares every
         adopter from adding a Markdown renderer of its own.
+
+        `structured_data` is a list of JSON-LD blocks built in code from checked
+        values. A site that ignores the field loses nothing; one that embeds
+        each block in a `<script type="application/ld+json">` gets rich results
+        it can trust.
 
         Unlike the reads above, a failure here is reported rather than
         swallowed: the article exists only in this pipeline until the site
@@ -172,6 +178,7 @@ class SiteClient:
             "meta_description": meta_description,
             "related_products": related_products or [],
             "related_solutions": related_solutions or [],
+            "structured_data": structured_data or [],
             "meta": meta or {},
         }
         if self.dry_run:
