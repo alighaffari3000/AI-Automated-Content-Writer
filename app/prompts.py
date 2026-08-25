@@ -77,21 +77,34 @@ Today's category — the subject area it is this category's turn to cover:
   what it covers: {{category_description}}
   who reads it: {{category_audience?}}
 
-Subjects this pipeline has already covered in this category:
+Subjects this pipeline has already covered in this category, with the keywords
+each one took:
 {{topics_in_category?}}
 
 Articles already published on the site:
 {{site_articles?}}
+
+Search terms already spoken for by an existing article:
+{{claimed_keywords?}}
+
+Subjects rejected already in this run, and why. If anything is listed here,
+your last proposal was turned down — propose something genuinely different
+rather than a rephrasing of it:
+{{rejected_subjects?}}
 
 The site's own catalogue, which the article may end up referring to:
 {{site_products?}}
 
 Propose one subject inside this category. Judge it against three things:
 
-1. **Not already covered.** Neither list above should contain this subject or a
-   near-restatement of it. If the obvious subjects are taken, go narrower — a
-   sub-question, a specific decision, a case the earlier pieces skipped — rather
-   than rewording something already there.
+1. **Not already covered, and not competing.** Neither list above should
+   contain this subject or a near-restatement of it. If the obvious subjects
+   are taken, go narrower — a sub-question, a specific decision, a case the
+   earlier pieces skipped — rather than rewording something already there.
+   At least one of your keywords must be a search this site does not already
+   answer: a subject whose every query is spoken for is refused in code, and
+   two articles competing for one query split the ranking between them instead
+   of winning it.
 2. **A real question someone asks.** Write for a person with a decision to make,
    not for a search engine. "How to size an inverter for a workshop with a
    compressor" beats "everything about inverters".
@@ -155,6 +168,14 @@ reached, note that instead of guessing what it says.
 For anything about the site's own catalogue, use the catalogue entries above as
 the source of truth. Never state a product specification from memory.
 
+Record the questions people actually ask about this subject as well. Not
+questions you would expect them to ask — the ones the search surfaced: related
+searches, the "people also ask" boxes, the questions competing articles are
+answering in their headings. Write them in {content.language_name}, phrased the
+way someone would type them. The article is built from these rather than from a
+plausible outline, which is the difference between answering a search and
+guessing at one.
+
 Write your findings as notes. Do not write the article.
 """.strip()
 
@@ -195,6 +216,9 @@ Produce:
 - outline: the section headings in order, {content.min_words}-{content.max_words}
   words of article in total.
 - target_keywords: the search terms this article should answer.
+- reader_questions: the questions the research recorded people actually asking,
+  copied across as they were written. Leave it empty rather than inventing
+  plausible ones — an invented question is a heading that answers nobody.
 - facts: one entry per checkable claim, each with a stable id (FACT-001,
   FACT-002, ...). Set allowed=false for any claim whose source is too weak to
   write from — a reseller page for a technical specification, an unreachable
@@ -276,12 +300,14 @@ Hard rules:
 - Body headings start at `##`. The site renders the article title as the page's
   only top-level heading, so a `#` heading in the body competes with it. Do not
   skip levels either: a `###` belongs under a `##`, never under nothing.
-- Where the subject has questions people genuinely ask, write two or more of
-  those section headings as the question itself, ending in a question mark, and
-  answer it in the first paragraph beneath. Those pairs are published as
-  structured data, so the answer must stand on its own without the paragraphs
-  around it — and a heading phrased as a question the section does not actually
-  answer is worse than a plain one.
+- The plan carries reader_questions: the questions real searches showed people
+  asking. Write two or more of your section headings as those questions, in
+  their own words rather than tidied into headline style, and answer each in
+  the first paragraph beneath. Those pairs are published as structured data, so
+  the answer must stand on its own without the paragraphs around it — and a
+  heading phrased as a question the section does not actually answer is worse
+  than a plain one. Where the plan has no questions, write plain headings; do
+  not invent questions to fill the shape.
 
 Search listing:
 - seo_title: how this should read in a search result. Lead with the words
@@ -306,6 +332,15 @@ Filing and linking:
   Only what the article actually covers, though: a link the article did not
   earn is a dead end that teaches the reader to ignore the rest. None is a
   perfectly good answer for a purely explanatory piece.
+- Link out of the body, in prose, where a reader would actually want more:
+  `[the anchor text](/slug)`. Every link must be to a page listed here — an
+  invented one blocks the draft in code, because a link into a 404 is the worst
+  signal an article can send.
+  - The cluster's main article, if one is named: {{pillar_slug?}}. Where this
+    piece is a narrower part of that subject, say so once and link back to it.
+  - Pages nothing currently points at, which are worth a link where one fits
+    honestly: {{link_targets?}}
+  Two or three earned links beat a paragraph of them.
 
 {{site_taxonomy?}}
 

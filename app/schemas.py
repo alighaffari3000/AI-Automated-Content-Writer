@@ -101,6 +101,14 @@ class ResearchBundle(BaseModel):
     angle: str = Field(description="The specific angle this article takes.")
     outline: list[str] = Field(description="Section headings, in order.")
     target_keywords: list[str] = Field(default_factory=list)
+    reader_questions: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Questions real searches showed people asking about this subject, "
+            "in the article's language and phrased as they would type them. "
+            "Not invented: these come from what the search actually surfaced."
+        ),
+    )
     facts: list[Fact] = Field(default_factory=list)
 
     @property

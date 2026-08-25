@@ -33,6 +33,10 @@ CREATE TABLE IF NOT EXISTS categories (
     name          TEXT    NOT NULL UNIQUE,
     description   TEXT    NOT NULL DEFAULT '',
     audience      TEXT    NOT NULL DEFAULT '',
+    -- The article this cluster hangs off: the broad piece every narrower one
+    -- links back to. Optional, and set by a person — the pipeline is not
+    -- entitled to decide what a site's main page on a subject is.
+    pillar_slug   TEXT    NOT NULL DEFAULT '',
     status        TEXT    NOT NULL DEFAULT 'active',
     times_used    INTEGER NOT NULL DEFAULT 0,
     created_at    TEXT    NOT NULL,
@@ -195,6 +199,12 @@ class Store:
             conn.execute(
                 "ALTER TABLE articles ADD COLUMN cost_json TEXT NOT NULL DEFAULT ''"
             )
+
+        category_columns = {r["name"] for r in conn.execute("PRAGMA table_info(categories)")}
+        if "pillar_slug" not in category_columns:
+            conn.execute(
+                "ALTER TABLE categories ADD COLUMN pillar_slug TEXT NOT NULL DEFAULT ''"
+            )
         conn.execute(
             "UPDATE topics SET status = 'active' WHERE status IN ('queued', 'used')"
         )
@@ -344,14 +354,70 @@ class Store:
 
         The planner reads this before proposing anything: without it, an
         inventive planner reinvents the same obvious subject every few weeks.
+        The keywords come too — two articles with different titles competing
+        for one query is the failure that titles alone will not show.
         """
         with self._connect() as conn:
             rows = conn.execute(
-                "SELECT title, angle, created_at FROM topics"
+                "SELECT title, angle, keywords, created_at FROM topics"
                 " WHERE category_id = ? ORDER BY id DESC LIMIT ?",
                 (category_id, limit),
             ).fetchall()
             return [dict(r) for r in rows]
+
+    def claimed_keywords(self, limit: int = 400) -> dict[str, str]:
+        """Every keyword already spoken for, and the article that took it.
+
+        Across all categories, not just today's: two pieces competing for one
+        query hurt each other whatever section they were filed under.
+        """
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT title, keywords FROM topics WHERE keywords <> ''"
+                " ORDER BY id DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        claimed: dict[str, str] = {}
+        for row in rows:
+            for keyword in str(row["keywords"]).split(","):
+                key = claim_key(keyword)
+                if key and key not in claimed:
+                    claimed[key] = row["title"]
+        return claimed
+
+    def set_pillar(self, category_id: int, slug: str) -> bool:
+        """Name the article a cluster hangs off."""
+        with self._connect() as conn:
+            changed = conn.execute(
+                "UPDATE categories SET pillar_slug = ? WHERE id = ?",
+                (slug.strip().lower(), category_id),
+            ).rowcount
+        return bool(changed)
+
+    def unlinked(self, slugs: list[str], limit: int = 8) -> list[str]:
+        """Published pages that nothing this pipeline wrote points at.
+
+        An article no other article links to is one a reader arrives at only
+        from search, and one a crawler reaches last. Handing these to the
+        writer as preferred link targets fixes the problem as a side effect of
+        writing the next piece, which is the only way it ever gets fixed.
+
+        Only bodies this pipeline produced are searched — it cannot see the
+        site's own hand-written pages, so this under-reports rather than
+        inventing orphans that are not orphans.
+        """
+        wanted = [s.strip().lower() for s in slugs if s and s.strip()]
+        if not wanted:
+            return []
+        with self._connect() as conn:
+            bodies = [
+                str(r["body"]).lower()
+                for r in conn.execute(
+                    "SELECT body FROM articles WHERE body <> '' ORDER BY id DESC LIMIT 200"
+                )
+            ]
+        haystack = "\n".join(bodies)
+        return [slug for slug in wanted if f"/{slug}" not in haystack][:limit]
 
     def recent_titles(self, limit: int = 40) -> list[str]:
         """Titles already written, so the planner does not repeat itself."""

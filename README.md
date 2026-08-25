@@ -101,6 +101,14 @@ it merges three sets of findings into one ordered list of edits, resolving
 contradictions, so the next round fixes named issues instead of rewriting the
 article from scratch.
 
+**Articles are a section, not a pile.** The planner sees every keyword an
+existing article already took, and a subject whose every query is spoken for is
+refused in code — two articles competing for one search split the ranking
+between them. Each category can name a pillar article the narrower pieces link
+back to (`categories pillar <id> <slug>`), and pages nothing currently links to
+are handed to the writer as preferred link targets, so orphans get fixed as a
+side effect of writing the next piece.
+
 **Human approval is the last word.** Every article arrives at the site as a
 draft. Publishing automatically is a decision for later, once the numbers earn
 it.

@@ -161,6 +161,7 @@ def load_run_context(ctx: Context, node_input: Any) -> Event:
     taxonomy = site.taxonomy()
     recent = store.recent_titles()
     covered = store.topics_in_category(category["id"])
+    orphans = store.unlinked(seo.slugs_from(articles))
 
     logger.info(
         "Run started: category=%r (%s article(s) so far) products=%s published=%s",
@@ -198,10 +199,43 @@ def load_run_context(ctx: Context, node_input: Any) -> Event:
                 if taxonomy["categories"]
                 else "(the site reported no categories; leave category empty)"
             ),
+            # The article this cluster hangs off, and the pages nothing points
+            # at yet. Both are link targets the writer is asked to prefer:
+            # structure that is asked for while the article is being written
+            # costs nothing, and structure retrofitted afterwards never happens.
+            "pillar_slug": category["pillar_slug"] or "",
+            "link_targets": (
+                _as_json(orphans) if orphans else "(nothing is short of links)"
+            ),
+            "claimed_keywords": _as_json(sorted(store.claimed_keywords())[:120]),
+            "rejected_subjects": "",
+            "topic_attempt": 0,
             "round_number": 0,
             "revision_directive": "",
         },
     )
+
+
+# One retry. A planner that proposes a subject already covered gets told so and
+# asked again; a planner that does it twice is describing a category that is
+# genuinely written out, and the honest answer is to stop rather than to
+# publish something competing with what is already there.
+MAX_TOPIC_ATTEMPTS = 2
+
+
+def cannibalises(keywords: list[str], claimed: dict[str, str]) -> str:
+    """Whether this subject would compete with one already published.
+
+    Only when *every* query it targets is already spoken for. Sharing one broad
+    keyword is normal and healthy — two articles about batteries both mention
+    batteries. Sharing all of them means the same searcher is being answered
+    twice, and the two pieces split the ranking between them.
+    """
+    keys = [claim_key(k) for k in keywords if claim_key(k)]
+    if not keys:
+        return ""
+    owners = [claimed.get(key, "") for key in keys]
+    return owners[0] if all(owners) else ""
 
 
 def open_article(ctx: Context, node_input: Any) -> Event:
@@ -221,14 +255,47 @@ def open_article(ctx: Context, node_input: Any) -> Event:
         )
 
     store = get_store()
-    keywords = ", ".join(proposal.get("keywords") or [])
+    proposed = [str(k) for k in (proposal.get("keywords") or [])]
+    attempt = int(ctx.state.get("topic_attempt", 0)) + 1
+
+    # Nothing is recorded until this passes: a subject that is sent back must
+    # leave no trace, or the planner would be avoiding it for ever after.
+    competing = cannibalises(proposed, store.claimed_keywords())
+    if competing:
+        rejected = str(ctx.state.get("rejected_subjects") or "")
+        note = f"{title} — every query it targets already belongs to {competing!r}"
+        logger.info("Subject rejected as a duplicate (attempt %s): %s", attempt, note)
+        if attempt >= MAX_TOPIC_ATTEMPTS:
+            return Event(
+                output={"status": "no_topic"},
+                route="no_topic",
+                content=types.Content(
+                    role="model",
+                    parts=[
+                        types.Part.from_text(
+                            text="Every subject the planner proposed competes with "
+                            "one already published."
+                        )
+                    ],
+                ),
+            )
+        return Event(
+            output={"status": "duplicate", "topic": title},
+            route="retry",
+            state={
+                "topic_attempt": attempt,
+                "rejected_subjects": f"{rejected}\n- {note}".strip(),
+            },
+        )
+
+    keywords = ", ".join(proposed)
     topic_id = store.record_topic(
         category_id, title, str(proposal.get("angle", "")), keywords
     )
     store.mark_category_used(category_id)
     article_id = store.start_article(topic_id)
 
-    known = recall_facts(title, proposal.get("keywords") or [])
+    known = recall_facts(title, proposed)
 
     logger.info(
         "Today's subject: %r (article_id=%s, %s fact(s) recalled from the registry)",
@@ -869,7 +936,10 @@ def build_pipeline() -> Workflow:
             ("START", load_run_context),
             (load_run_context, {"ok": topic_planner, "no_category": abort_run}),
             (topic_planner, open_article),
-            (open_article, {"ok": researcher, "no_topic": abort_run}),
+            (
+                open_article,
+                {"ok": researcher, "retry": topic_planner, "no_topic": abort_run},
+            ),
             (researcher, fact_builder),
             (fact_builder, persist_registry),
             (persist_registry, {"ok": writer, "no_facts": abort_run}),

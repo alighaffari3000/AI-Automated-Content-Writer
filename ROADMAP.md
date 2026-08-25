@@ -126,19 +126,25 @@ never from the prose. No date is invented: a human decides when this publishes,
 so only the site knows it. The blocks travel with the post as
 `structured_data`, for the site to embed.
 
-**Internal links as strategy, not accident.** The `/articles` feed is fetched
-and offered, but no structure sits behind it. Each category gains a pillar
-article; the planner links every new article into its cluster and the pillar
-back out. Two checks come with it: an orphan check (an article nothing links
-to), and a cannibalisation check — the planner sees existing titles and
-keywords before choosing, so two articles never compete for the same query.
+**Internal links as strategy, not accident. ✅ Shipped.** A category can name
+the pillar its cluster hangs off, and every narrower piece is asked to link
+back to it. Pages nothing links to are handed to the writer as preferred
+targets — an orphan check that fixes orphans instead of reporting them, which
+is the only version that ever gets acted on. Cannibalisation is refused in
+code: the planner sees every keyword already spoken for, and a subject whose
+every query belongs to an existing article is sent back for another go before
+the run gives up. Sharing one broad keyword stays normal — two articles about
+batteries both mention batteries.
 
-**Keywords from the search, not the model's head.** The planner currently
-invents its keywords. The researcher already runs real searches — one more
-duty: record the questions people actually ask around the topic, so the writer
-builds its headings from real queries rather than plausible ones. The other
-half of this — knowing which queries the site already surfaces for — is Search
-Console data, and waits for phase 3.
+**Keywords from the search, not the model's head. ✅ Shipped**, the half that
+does not need Search Console. The researcher records the questions its searches
+actually surfaced — related searches, "people also ask", what competing
+articles answer in their headings — and the writer builds its question headings
+from those rather than from plausible ones, which is also what makes the
+`FAQPage` structured data honest. Where the search surfaced nothing, the
+article gets plain headings rather than invented questions. Knowing which
+queries the site already surfaces for is the other half, and still waits for
+phase 3.
 
 **A safety gate.** Phase 1 does not need one: every article reaches a human
 anyway, so the human *is* the gate. It becomes mandatory the moment anything

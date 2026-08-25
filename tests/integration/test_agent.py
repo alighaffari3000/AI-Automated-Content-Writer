@@ -53,6 +53,21 @@ def test_the_gate_can_only_revise_or_finish():
     assert routes == {"revise": "judge", "finalize": "finalize"}
 
 
+def test_a_duplicate_subject_goes_back_to_the_planner_rather_than_out():
+    """A subject competing with one already published is refused in code, and
+    the planner gets one more go before the run gives up."""
+    routes = {
+        edge.route: edge.to_node.name
+        for edge in root_agent.graph.edges
+        if edge.from_node.name == "open_article"
+    }
+    assert routes == {
+        "ok": "researcher",
+        "retry": "topic_planner",
+        "no_topic": "abort_run",
+    }
+
+
 def test_revision_returns_to_the_writer_through_the_judge():
     """The loop exists, and it goes back through the judge rather than directly."""
     judge_targets = {

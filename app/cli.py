@@ -230,6 +230,21 @@ def cmd_categories_list(args: argparse.Namespace) -> int:
         )
         if row["description"]:
             print(f"       {row['description'][:88]}")
+        if row["pillar_slug"]:
+            print(f"       pillar: /{row['pillar_slug']}")
+    return 0
+
+
+def cmd_categories_pillar(args: argparse.Namespace) -> int:
+    """Name the article a cluster hangs off.
+
+    Every narrower piece written in this area is then asked to link back to it,
+    which is how a pile of articles becomes a section of a site.
+    """
+    if not get_store().set_pillar(args.id, args.slug):
+        print(f"No category with id {args.id}.")
+        return 1
+    print(f"category #{args.id} now hangs off /{args.slug.strip().lower()}")
     return 0
 
 
@@ -376,6 +391,15 @@ def main(argv: list[str] | None = None) -> int:
     cats_sub.add_parser(
         "list", help="show subject areas in rotation order", parents=[common]
     ).set_defaults(func=cmd_categories_list)
+
+    pillar = cats_sub.add_parser(
+        "pillar",
+        help="name the article this area's pieces link back to",
+        parents=[common],
+    )
+    pillar.add_argument("id", type=int)
+    pillar.add_argument("slug", help="slug of an article already published on the site")
+    pillar.set_defaults(func=cmd_categories_pillar)
 
     pause = cats_sub.add_parser(
         "pause", help="take an area out of rotation (never deleted)", parents=[common]
