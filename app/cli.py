@@ -21,8 +21,9 @@ from google.adk.runners import InMemoryRunner
 from google.genai import types
 
 from .agent import app as adk_app
-from .agent import get_store
+from .agent import agent_models, get_store
 from .config import settings
+from .cost import RunCost, usage_from_event
 from .notify import build_notifier
 
 logger = logging.getLogger("content_writer")
@@ -52,18 +53,47 @@ async def _run_once() -> int:
     session = await runner.session_service.create_session(
         app_name=adk_app.name, user_id="scheduler", session_id=f"run-{uuid.uuid4().hex[:12]}"
     )
+    cost = RunCost()
+    models = agent_models()
     last: str = ""
     async for event in runner.run_async(
         user_id="scheduler",
         session_id=session.id,
         new_message=types.Content(role="user", parts=[types.Part.from_text(text=TRIGGER)]),
     ):
+        usage = usage_from_event(event, models)
+        if usage:
+            cost.record_tokens(*usage)
         if event.content and event.content.parts:
             for part in event.content.parts:
                 if getattr(part, "text", None):
                     last = part.text
+
+    # Pictures are made inside the graph rather than through the runner, so
+    # their count comes back through state.
+    final = await runner.session_service.get_session(
+        app_name=adk_app.name, user_id="scheduler", session_id=session.id
+    )
+    state = getattr(final, "state", {}) or {}
+    for _ in range(int(state.get("images_generated", 0))):
+        cost.record_image()
+
+    rates, image_usd = settings.cost.rates, settings.cost.image_usd
+    logger.info("Run cost:\n%s", cost.summary(rates, image_usd))
+
+    article_id = int(state.get("article_id", 0))
+    if article_id:
+        get_store().save_cost(article_id, cost.to_dict(rates, image_usd))
+
     if last:
         print(last)
+        notifier = build_notifier(settings.notify)
+        notifier.send(
+            f"💰 {cost.total_calls} calls · "
+            f"{cost.total_input + cost.total_output:,} tokens · "
+            f"~${cost.estimate_usd(rates, image_usd):.3f}"
+            + (f" · {cost.images} image(s)" if cost.images else "")
+        )
     return 0
 
 
@@ -192,6 +222,41 @@ def cmd_categories_pause(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_eval(args: argparse.Namespace) -> int:
+    """Measure whether the reviewers still catch planted defects."""
+    from . import evaluation
+
+    failures = evaluation.main()
+    return 1 if failures else 0
+
+
+def cmd_cost(args: argparse.Namespace) -> int:
+    """What runs have actually been costing."""
+    runs = get_store().cost_summary(args.limit)
+    if not runs:
+        print("No costed runs yet.")
+        return 0
+
+    total = sum(r["cost"].get("estimated_usd", 0) for r in runs)
+    tokens = sum(
+        r["cost"].get("input_tokens", 0) + r["cost"].get("output_tokens", 0) for r in runs
+    )
+    print(f"{len(runs)} run(s), {tokens:,} tokens, ~${total:.2f} total\n")
+    for run in runs:
+        c = run["cost"]
+        print(
+            f"#{run['id']:<4} {(run['created_at'] or '')[:10]}  "
+            f"${c.get('estimated_usd', 0):.4f}  "
+            f"{c.get('input_tokens', 0):>7,} in / {c.get('output_tokens', 0):>6,} out  "
+            f"{c.get('images', 0)} img  {run['status']}"
+        )
+        if run["title"]:
+            print(f"      {run['title'][:78]}")
+    print(f"\naverage per run: ${total / len(runs):.4f}")
+    print(f"at one a day, that is about ${total / len(runs) * 30:.2f} a month.")
+    return 0
+
+
 def cmd_topics_list(args: argparse.Namespace) -> int:
     """What the planner has already invented, newest first."""
     with get_store()._connect() as conn:  # noqa: SLF001
@@ -255,6 +320,16 @@ def main(argv: list[str] | None = None) -> int:
     pause.add_argument("id", type=int)
     pause.add_argument("--resume", action="store_true", help="put it back in rotation")
     pause.set_defaults(func=cmd_categories_pause)
+
+    sub.add_parser(
+        "eval",
+        help="check that the reviewers still catch planted defects",
+        parents=[common],
+    ).set_defaults(func=cmd_eval)
+
+    cost = sub.add_parser("cost", help="what runs have been costing", parents=[common])
+    cost.add_argument("--limit", type=int, default=30)
+    cost.set_defaults(func=cmd_cost)
 
     topics = sub.add_parser("topics", help="what the planner has written about")
     topics_sub = topics.add_subparsers(dest="topics_command", required=True)

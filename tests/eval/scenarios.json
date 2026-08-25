@@ -1,0 +1,227 @@
+[
+  {
+    "id": "phantom-citation",
+    "description": "A specification cited to a fact that is not in the registry",
+    "expect_reviewers": ["technical_fact"],
+    "expect_min_severity": "critical",
+    "expect_verdict": "REVISE",
+    "bundle": {
+      "angle": "How depth of discharge decides the battery you actually need",
+      "outline": ["Usable versus nominal capacity", "What DoD costs you"],
+      "target_keywords": ["depth of discharge", "usable capacity"],
+      "facts": [
+        {
+          "fact_id": "FACT-001",
+          "claim": "LFP batteries support 80% to 100% usable depth of discharge.",
+          "source": "Manufacturer documentation",
+          "source_ids": ["src-1"],
+          "evidence": "LFP chemistry tolerates 80-100% DoD without measurable cycle-life penalty.",
+          "confidence": "HIGH",
+          "allowed": true
+        }
+      ]
+    },
+    "draft": {
+      "title": "عمق تخلیه باتری چیست",
+      "slug": "depth-of-discharge",
+      "excerpt": "راهنمای انتخاب ظرفیت باتری بر اساس عمق تخلیه.",
+      "seo_title": "عمق تخلیه باتری: راهنمای انتخاب ظرفیت",
+      "meta_description": "عمق تخلیه تعیین می‌کند از یک باتری چقدر انرژی واقعا در دسترس شماست.",
+      "body": "## ظرفیت اسمی در برابر ظرفیت قابل استفاده\n\nباتری‌های لیتیوم‌آهن‌فسفات تا ۸۰ تا ۱۰۰ درصد عمق تخلیه را بدون افت عمر تحمل می‌کنند.\n\n## چرخه عمر\n\nاین باتری‌ها دقیقا ۱۲٬۰۰۰ چرخه شارژ و دشارژ را در دمای ۴۵ درجه سانتی‌گراد تضمین می‌کنند و پس از آن ۹۸ درصد ظرفیت خود را حفظ می‌نمایند.",
+      "used_fact_ids": ["FACT-001", "FACT-014"],
+      "category": "energy-storage",
+      "tags": ["باتری"],
+      "related_products": [],
+      "related_solutions": []
+    }
+  },
+  {
+    "id": "unsupported-number",
+    "description": "A precise figure asserted with no fact behind it at all",
+    "expect_reviewers": ["technical_fact"],
+    "expect_min_severity": "critical",
+    "expect_verdict": "REVISE",
+    "bundle": {
+      "angle": "Sizing an inverter for motor starting current",
+      "outline": ["Running watts", "Surge"],
+      "target_keywords": ["inverter sizing"],
+      "facts": [
+        {
+          "fact_id": "FACT-001",
+          "claim": "Refrigerator compressors draw three to five times running wattage at startup.",
+          "source": "Technical documentation",
+          "source_ids": ["src-1"],
+          "evidence": "Inrush current for a domestic compressor is typically 3-5x running current.",
+          "confidence": "HIGH",
+          "allowed": true
+        }
+      ]
+    },
+    "draft": {
+      "title": "انتخاب اینورتر برای بارهای موتوری",
+      "slug": "inverter-motor-loads",
+      "excerpt": "چرا اینورتر باید بزرگ‌تر از مجموع بارها باشد.",
+      "seo_title": "انتخاب اینورتر برای بار موتوری و جریان راه‌اندازی",
+      "meta_description": "جریان راه‌اندازی موتور تعیین می‌کند اینورتر شما چقدر باید بزرگ باشد.",
+      "body": "## جریان راه‌اندازی\n\nکمپرسور یخچال هنگام راه‌اندازی سه تا پنج برابر توان کارکرد خود جریان می‌کشد.\n\n## محاسبه\n\nبر اساس اندازه‌گیری‌های ما، دقیقا ۹۴ درصد اینورترهای موجود در بازار ایران در سال اول دچار افت راندمان ۱۷ درصدی می‌شوند و عمر مفید آن‌ها ۶ سال و ۳ ماه است.",
+      "used_fact_ids": ["FACT-001"],
+      "category": "technology",
+      "tags": ["اینورتر"],
+      "related_products": [],
+      "related_solutions": []
+    }
+  },
+  {
+    "id": "product-spec-mismatch",
+    "description": "A catalogue product described with the wrong capacity and price",
+    "expect_reviewers": ["product"],
+    "expect_min_severity": "critical",
+    "expect_verdict": "REVISE",
+    "site_products": "[{\"slug\": \"home-battery\", \"name\": \"باتری خانگی سانا ۵ کیلووات‌ساعت\", \"specs\": [{\"label\": \"ظرفیت\", \"value\": \"5.12 kWh\"}, {\"label\": \"گارانتی\", \"value\": \"۵ سال\"}]}]",
+    "bundle": {
+      "angle": "Choosing a home battery",
+      "outline": ["What size you need"],
+      "target_keywords": ["home battery"],
+      "facts": [
+        {
+          "fact_id": "FACT-001",
+          "claim": "A typical household needs 5 to 10 kWh of usable storage for essential loads.",
+          "source": "Technical documentation",
+          "source_ids": ["src-1"],
+          "evidence": "Essential-load backup for a household typically requires 5-10 kWh per day.",
+          "confidence": "HIGH",
+          "allowed": true
+        }
+      ]
+    },
+    "draft": {
+      "title": "انتخاب باتری خانگی",
+      "slug": "choosing-home-battery",
+      "excerpt": "چه ظرفیتی برای خانه شما مناسب است.",
+      "seo_title": "انتخاب باتری خانگی: چه ظرفیتی لازم دارید",
+      "meta_description": "راهنمای انتخاب ظرفیت باتری خانگی بر اساس مصرف بارهای ضروری.",
+      "body": "## چه ظرفیتی لازم دارید\n\nیک خانه معمولی برای بارهای ضروری به ۵ تا ۱۰ کیلووات‌ساعت ذخیره قابل استفاده نیاز دارد.\n\n## پیشنهاد ما\n\nباتری خانگی سانا با ظرفیت ۱۵ کیلووات‌ساعت و گارانتی ۱۵ ساله، با قیمت ۴۵ میلیون تومان، بهترین گزینه برای این کار است و همیشه موجود می‌باشد.",
+      "used_fact_ids": ["FACT-001"],
+      "category": "energy-storage",
+      "tags": ["باتری"],
+      "related_products": ["home-battery"],
+      "related_solutions": []
+    }
+  },
+  {
+    "id": "keyword-stuffing",
+    "description": "English keywords forced into Persian prose, and an empty search snippet",
+    "expect_reviewers": ["seo_editorial"],
+    "expect_min_severity": "major",
+    "expect_verdict": "REVISE",
+    "bundle": {
+      "angle": "Peak shaving for factories",
+      "outline": ["What demand charges are"],
+      "target_keywords": ["peak shaving", "demand charge"],
+      "facts": [
+        {
+          "fact_id": "FACT-001",
+          "claim": "Demand charges are billed on the highest 15-minute average load in the period.",
+          "source": "Utility tariff documentation",
+          "source_ids": ["src-1"],
+          "evidence": "Demand is metered as the maximum 15-minute average demand within the billing period.",
+          "confidence": "HIGH",
+          "allowed": true
+        }
+      ]
+    },
+    "draft": {
+      "title": "پیک سایی",
+      "slug": "peak-shaving",
+      "excerpt": "پیک سایی",
+      "seo_title": "",
+      "meta_description": "",
+      "body": "## peak shaving چیست\n\nهزینه demand charge (دیماند) بر اساس بالاترین میانگین بار ۱۵ دقیقه‌ای در دوره صورتحساب محاسبه می‌شود. با peak shaving (پیک سایی) می‌توان این demand charge (هزینه دیماند) را کاهش داد. راهکار peak shaving برای هر کارخانه‌ای که demand charge می‌پردازد مناسب است و peak shaving بهترین روش کاهش demand charge است.",
+      "used_fact_ids": ["FACT-001"],
+      "category": "news",
+      "tags": ["پیک‌سایی"],
+      "related_products": [],
+      "related_solutions": []
+    }
+  },
+  {
+    "id": "overstated-certainty",
+    "description": "A medium-confidence, audit-flagged fact presented as settled truth",
+    "expect_reviewers": ["technical_fact"],
+    "expect_min_severity": "major",
+    "expect_verdict": "REVISE",
+    "bundle": {
+      "angle": "Temperature and battery life",
+      "outline": ["Heat and degradation"],
+      "target_keywords": ["battery temperature"],
+      "facts": [
+        {
+          "fact_id": "FACT-001",
+          "claim": "Cycle life may fall by roughly half at sustained 45C compared with 25C.",
+          "source": "A general web article",
+          "source_ids": ["src-1"],
+          "evidence": "One blog reported roughly halved cycle life at elevated temperature.",
+          "confidence": "MEDIUM",
+          "allowed": true,
+          "audit_note": "downgraded: only general-web sources support it"
+        }
+      ]
+    },
+    "draft": {
+      "title": "دما و عمر باتری",
+      "slug": "temperature-battery-life",
+      "excerpt": "اثر دمای محیط بر عمر باتری.",
+      "seo_title": "دمای محیط چه اثری بر عمر باتری دارد",
+      "meta_description": "دمای بالا عمر مفید باتری را کاهش می‌دهد؛ در این مقاله میزان این اثر را بررسی می‌کنیم.",
+      "body": "## حرارت و افت ظرفیت\n\nعمر چرخه‌ای باتری در دمای ۴۵ درجه سانتی‌گراد دقیقا نصف مقدار آن در دمای ۲۵ درجه است. این یک واقعیت اثبات‌شده و قطعی است که در تمام شرایط و برای تمام باتری‌ها صدق می‌کند و هیچ استثنایی ندارد.",
+      "used_fact_ids": ["FACT-001"],
+      "category": "energy-storage",
+      "tags": ["باتری"],
+      "related_products": [],
+      "related_solutions": []
+    }
+  },
+  {
+    "id": "clean-control",
+    "description": "A sound draft with nothing planted — must not be failed",
+    "is_control": true,
+    "bundle": {
+      "angle": "Why usable capacity matters more than the number on the box",
+      "outline": ["Nominal versus usable", "What that means when you buy"],
+      "target_keywords": ["usable capacity", "depth of discharge"],
+      "facts": [
+        {
+          "fact_id": "FACT-001",
+          "claim": "LFP batteries support 80% to 100% usable depth of discharge.",
+          "source": "Manufacturer documentation",
+          "source_ids": ["src-1"],
+          "evidence": "LFP chemistry tolerates 80-100% DoD without measurable cycle-life penalty.",
+          "confidence": "HIGH",
+          "allowed": true
+        },
+        {
+          "fact_id": "FACT-002",
+          "claim": "Lead-acid batteries are generally limited to about 50% depth of discharge.",
+          "source": "Manufacturer documentation",
+          "source_ids": ["src-1"],
+          "evidence": "Discharging lead-acid beyond roughly 50% shortens service life sharply.",
+          "confidence": "HIGH",
+          "allowed": true
+        }
+      ]
+    },
+    "draft": {
+      "title": "ظرفیت قابل استفاده باتری، مهم‌تر از عدد روی جعبه",
+      "slug": "usable-capacity-matters",
+      "excerpt": "دو باتری با ظرفیت اسمی یکسان می‌توانند انرژی در دسترس بسیار متفاوتی داشته باشند؛ تفاوت در عمق تخلیه است.",
+      "seo_title": "ظرفیت قابل استفاده باتری چیست و چرا مهم است",
+      "meta_description": "عمق تخلیه تعیین می‌کند از ظرفیت اسمی یک باتری چه مقدار واقعا در اختیار شماست. راهنمای مقایسه درست.",
+      "body": "## ظرفیت اسمی در برابر ظرفیت قابل استفاده\n\nعددی که روی باتری نوشته شده، ظرفیت اسمی است؛ اما آنچه در عمل می‌توانید مصرف کنید به عمق تخلیه مجاز آن بستگی دارد.\n\nباتری‌های لیتیوم‌آهن‌فسفات معمولا ۸۰ تا ۱۰۰ درصد ظرفیت خود را بدون افت محسوس عمر در اختیار می‌گذارند. باتری‌های سرب‌اسید در مقابل، معمولا تا حدود ۵۰ درصد قابل تخلیه‌اند و عبور از این مرز عمر آن‌ها را به‌سرعت کوتاه می‌کند.\n\n## هنگام خرید چه معنایی دارد\n\nیعنی برای رسیدن به یک مقدار انرژی مشخص، باتری سرب‌اسید باید ظرفیت اسمی بزرگ‌تری داشته باشد. مقایسه دو محصول تنها بر اساس ظرفیت اسمی، مقایسه درستی نیست.\n\nاین موضوع همه شرایط را پوشش نمی‌دهد: دما، نرخ جریان و سن باتری نیز بر ظرفیت در دسترس اثر می‌گذارند و بهتر است مشخصات سازنده برای شرایط کاری خودتان بررسی شود.",
+      "used_fact_ids": ["FACT-001", "FACT-002"],
+      "category": "energy-storage",
+      "tags": ["باتری", "ذخیره‌سازی انرژی"],
+      "related_products": [],
+      "related_solutions": []
+    }
+  }
+]

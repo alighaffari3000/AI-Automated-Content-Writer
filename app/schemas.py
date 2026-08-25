@@ -48,12 +48,27 @@ class Fact(BaseModel):
     fact_id: str = Field(description="Stable id such as FACT-001.")
     claim: str = Field(description="The single verifiable statement.")
     source: str = Field(description="Who published it, e.g. 'Manufacturer datasheet'.")
-    source_url: str = Field(default="", description="URL, empty if not web-sourced.")
+    source_ids: list[str] = Field(
+        default_factory=list,
+        description=(
+            "The src-N ids from the source list that support this claim. "
+            "These are checked against the sources the search actually "
+            "returned, so an id that was not in the list invalidates the fact."
+        ),
+    )
+    source_url: str = Field(
+        default="",
+        description="Filled in from the real source list; leave empty.",
+    )
     evidence: str = Field(description="The passage or data the claim rests on.")
     confidence: Confidence = Field(description="How well the source supports it.")
     allowed: bool = Field(
         default=True,
         description="False when the source is too weak to write from.",
+    )
+    audit_note: str = Field(
+        default="",
+        description="Filled in by the source audit; leave empty.",
     )
 
 

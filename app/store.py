@@ -51,6 +51,7 @@ CREATE TABLE IF NOT EXISTS articles (
     excerpt       TEXT    NOT NULL DEFAULT '',
     body          TEXT    NOT NULL DEFAULT '',
     facts_json    TEXT    NOT NULL DEFAULT '[]',
+    cost_json     TEXT    NOT NULL DEFAULT '',
     status        TEXT    NOT NULL DEFAULT 'running',
     verdict       TEXT    NOT NULL DEFAULT '',
     rounds        INTEGER NOT NULL DEFAULT 0,
@@ -147,6 +148,12 @@ class Store:
         ):
             if name not in columns:
                 conn.execute(f"ALTER TABLE topics ADD COLUMN {name} {ddl}")
+
+        article_columns = {r["name"] for r in conn.execute("PRAGMA table_info(articles)")}
+        if "cost_json" not in article_columns:
+            conn.execute(
+                "ALTER TABLE articles ADD COLUMN cost_json TEXT NOT NULL DEFAULT ''"
+            )
         conn.execute(
             "UPDATE topics SET status = 'active' WHERE status IN ('queued', 'used')"
         )
@@ -325,6 +332,31 @@ class Store:
                 (topic_id, _now(), _now()),
             )
             return int(cur.lastrowid or 0)
+
+    def save_cost(self, article_id: int, cost: dict[str, Any]) -> None:
+        """What this article cost to produce, kept beside the article itself."""
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE articles SET cost_json = ?, updated_at = ? WHERE id = ?",
+                (json.dumps(cost, ensure_ascii=False), _now(), article_id),
+            )
+
+    def cost_summary(self, limit: int = 30) -> list[dict[str, Any]]:
+        """Recent runs and what they cost, newest first."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT id, title, status, cost_json, created_at FROM articles"
+                " WHERE cost_json <> '' ORDER BY id DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        out = []
+        for row in rows:
+            try:
+                cost = json.loads(row["cost_json"])
+            except json.JSONDecodeError:
+                continue
+            out.append({**dict(row), "cost": cost})
+        return out
 
     def save_facts(self, article_id: int, facts: list[dict[str, Any]]) -> None:
         with self._connect() as conn:

@@ -92,8 +92,20 @@ Context from the site you are writing for:
 {FACT_RULE}
 
 Use web search to gather what an accurate article needs. For every checkable
-claim, record: the claim itself, who published it, the URL, the exact passage
-that supports it, and how strongly the source backs it up. Prefer manufacturer
+claim, record: the claim itself, who published it, the exact passage that
+supports it, and how strongly the source backs it up. Do not transcribe URLs —
+they are captured automatically from the search itself, and a URL typed from
+memory is the one thing here that cannot be checked.
+
+Go after primary sources deliberately, because the article is only as good as
+what stands behind it. Search for the datasheet, the standard, the
+manufacturer's own manual — terms like "datasheet", "specification sheet",
+"installation manual", "IEC 62619", "IEEE 1547", "NEC 690" find the document
+itself rather than an article about it. A blog that quotes a figure and the
+document the figure came from are not the same source, and only one of them
+will still say the same thing next year. When only secondary sources exist for
+a claim, say so in the notes; a claim honestly marked as an industry estimate
+is publishable, and one dressed up as a specification is not. Prefer manufacturer
 documentation and standards bodies over blogs and resellers. When sources
 disagree, say so rather than picking one silently. When a source cannot be
 reached, note that instead of guessing what it says.
@@ -113,6 +125,17 @@ Research notes:
 {{research_notes}}
 
 Topic: {{topic_title}}
+
+The sources the search actually reached, with what each one is worth:
+{{sources_for_prompt?}}
+
+These ids are the only citations that exist. Every fact must list the src-N
+ids that genuinely support it in source_ids — an id you invent, or one that is
+not in the list above, invalidates the fact when it is audited. Cite the
+strongest source that supports a claim, not the first one; a number from a
+manufacturer's own documentation and the same number from a shop listing are
+not equally worth publishing. Leave source_url empty — it is filled in from
+the real list.
 
 {FACT_RULE}
 
@@ -249,8 +272,13 @@ You review one draft for factual and technical soundness in {content.domain}.
 You are one of three independent reviewers and cannot see the others' work.
 Judge only what is in front of you.
 
-Fact registry (the only sanctioned source of claims):
+Fact registry (the only sanctioned source of claims). Each fact has already
+been audited against the sources the search really reached: `confidence` may
+have been downgraded and `audit_note` says why.
 {{research_bundle}}
+
+The sources themselves, with how much authority each carries:
+{{sources_for_prompt?}}
 
 Draft:
 {{draft}}
@@ -264,6 +292,11 @@ Check, in this order:
    and any comparison being like-for-like.
 4. Nothing important is stated with false confidence where the sources
    disagreed.
+5. The draft's certainty matches the evidence behind it. A fact carrying an
+   audit_note, or one whose sources are all general-web, must not be presented
+   as settled — "typically", "according to the manufacturer" and a named
+   source are the honest forms. A LOW-confidence fact stated flatly is a major
+   issue.
 
 {SCORING_RULE}
 

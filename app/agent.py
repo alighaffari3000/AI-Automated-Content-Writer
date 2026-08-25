@@ -26,6 +26,7 @@ import logging
 from typing import Any
 
 from google.adk.agents import LlmAgent
+from google.adk.agents.callback_context import CallbackContext
 from google.adk.agents.context import Context
 from google.adk.apps import App
 from google.adk.events.event import Event
@@ -38,6 +39,7 @@ from . import prompts
 from .config import settings
 from .images import ImageGenerator, ImageRequest, find_markers, replace_markers
 from .notify import build_notifier
+from .sources import SourceIndex, audit_fact, check_reachable, harvest
 from .rules import evaluate_reviews
 from .schemas import (
     ArticleDraft,
@@ -52,6 +54,25 @@ from .store import Store
 logger = logging.getLogger(__name__)
 
 REVIEWER_NODES = ("technical_fact_reviewer", "product_reviewer", "seo_editorial_reviewer")
+
+
+def agent_models() -> dict[str, str]:
+    """Which model each agent runs on.
+
+    Runner events carry the agent's name but not the model's, so accounting
+    has to be told. Keep this in step with the builders below or a run's cost
+    is quietly attributed to a model with no configured rate — which shows up
+    as a suspiciously free article rather than as an error.
+    """
+    worker, author = settings.models.worker, settings.models.author
+    return {
+        "topic_planner": worker,
+        "researcher": worker,
+        "fact_builder": worker,
+        "writer": author,
+        "judge": author,
+        **{name: worker for name in REVIEWER_NODES},
+    }
 
 _store: Store | None = None
 
@@ -189,12 +210,57 @@ def open_article(ctx: Context, node_input: Any) -> Event:
     )
 
 
+def collect_sources(callback_context: CallbackContext) -> None:
+    """Harvest the URLs the search actually used, once the researcher is done.
+
+    Grounding puts its sources in the response metadata, not in the model's
+    text. Read from the session's events rather than trusting the prose, or
+    every citation in the registry is whatever the model chose to type.
+    """
+    session = callback_context._invocation_context.session  # noqa: SLF001
+    index = harvest(list(session.events))
+    if index:
+        check_reachable(index)
+    callback_context.state["source_index"] = index.to_list()
+    callback_context.state["sources_for_prompt"] = index.as_prompt()
+    logger.info("Grounding produced %s distinct source(s).", len(index.sources))
+
+
 def persist_registry(ctx: Context, node_input: Any) -> Event:
-    """Store the fact registry, and refuse to write from an empty one."""
+    """Audit every fact against its real sources, then store the registry.
+
+    This is the step that closes the loop the reviewers cannot: they check the
+    article against the registry, and nothing checked the registry against the
+    world. Here each fact meets the sources the search actually returned —
+    a cited id that was never in that list invalidates the fact outright, and
+    a confident technical claim resting only on the general web is downgraded.
+    All of it is code, so the same research always earns the same verdict.
+    """
     raw = ctx.state.get("research_bundle") or {}
     bundle = ResearchBundle(**raw) if raw else ResearchBundle(angle="", outline=[])
-    allowed = bundle.allowed_facts
 
+    index = SourceIndex()
+    for entry in ctx.state.get("source_index") or []:
+        source = index.add(
+            url=str(entry.get("url", "")),
+            title=str(entry.get("title", "")),
+            domain=str(entry.get("domain", "")),
+        )
+        source.reachable = entry.get("reachable")
+        source.note = str(entry.get("note", ""))
+
+    downgraded = 0
+    for fact in bundle.facts:
+        confidence, allowed, note = audit_fact(fact.source_ids, index, fact.confidence)
+        if confidence != fact.confidence or allowed != fact.allowed:
+            downgraded += 1
+        fact.confidence = confidence
+        fact.allowed = fact.allowed and allowed
+        fact.audit_note = note
+        urls = [s.url for s in (index.get(sid) for sid in fact.source_ids) if s]
+        fact.source_url = urls[0] if urls else ""
+
+    allowed = bundle.allowed_facts
     article_id = int(ctx.state.get("article_id", 0))
     if article_id:
         get_store().save_facts(
@@ -202,7 +268,10 @@ def persist_registry(ctx: Context, node_input: Any) -> Event:
         )
 
     logger.info(
-        "Fact registry: %s registered, %s usable.", len(bundle.facts), len(allowed)
+        "Fact registry: %s registered, %s usable, %s adjusted by the source audit.",
+        len(bundle.facts),
+        len(allowed),
+        downgraded,
     )
     if not allowed:
         return Event(
@@ -289,22 +358,25 @@ def evaluate_gate(ctx: Context, node_input: dict[str, Any]) -> Event:
     )
 
 
-def illustrate(draft: ArticleDraft) -> tuple[str, str]:
+def illustrate(draft: ArticleDraft) -> tuple[str, str, int]:
     """Make the article's pictures and put them where they belong.
 
     Runs once, after the gate has approved — never during a revision round,
     where every picture would be paid for and then thrown away.
 
-    Returns the body with images in place, and the lead image's URL. Both
-    degrade quietly: a failed picture leaves an article with one fewer, which
-    is a far better outcome than no article.
+    Returns the body with images in place, the lead image's URL, and how many
+    pictures were actually generated — the last one so the run can be costed,
+    since these calls do not pass through the runner. All of it degrades
+    quietly: a failed picture leaves an article with one fewer, which is a far
+    better outcome than no article.
     """
     if not settings.images.enabled:
-        return replace_markers(draft.body, []), ""
+        return replace_markers(draft.body, []), "", 0
 
     site = get_site()
     generator = ImageGenerator(settings.images)
     stem = draft.slug or "article"
+    generated = 0
 
     featured_url = ""
     if draft.featured_image_prompt:
@@ -312,6 +384,7 @@ def illustrate(draft: ArticleDraft) -> tuple[str, str]:
             ImageRequest(draft.featured_image_prompt, draft.featured_image_alt)
         )
         if image:
+            generated += 1
             featured_url = (
                 site.upload_image(
                     image.data, f"{stem}-lead{image.extension}", draft.featured_image_alt
@@ -326,6 +399,7 @@ def illustrate(draft: ArticleDraft) -> tuple[str, str]:
         if image is None:
             urls.append(None)
             continue
+        generated += 1
         urls.append(
             site.upload_image(image.data, f"{stem}-{index}{image.extension}", request.alt)
         )
@@ -338,7 +412,7 @@ def illustrate(draft: ArticleDraft) -> tuple[str, str]:
         len(requests),
     )
     # Any marker past the cap is dropped rather than published as literal text.
-    return replace_markers(draft.body, urls), featured_url
+    return replace_markers(draft.body, urls), featured_url, generated
 
 
 def finalize(ctx: Context, node_input: dict[str, Any]) -> Event:
@@ -367,7 +441,7 @@ def finalize(ctx: Context, node_input: dict[str, Any]) -> Event:
             ),
         )
 
-    illustrated_body, featured_url = illustrate(draft)
+    illustrated_body, featured_url, images_made = illustrate(draft)
 
     ok, remote = get_site().create_post(
         title=draft.title,
@@ -431,6 +505,7 @@ def finalize(ctx: Context, node_input: dict[str, Any]) -> Event:
             "title": draft.title,
             "remote_id": remote if ok else "",
         },
+        state={"images_generated": images_made},
         content=types.Content(role="model", parts=[types.Part.from_text(text=message)]),
     )
 
@@ -491,6 +566,7 @@ def build_researcher() -> LlmAgent:
         instruction=prompts.researcher_instruction(settings.content),
         tools=[google_search],
         output_key="research_notes",
+        after_agent_callback=collect_sources,
     )
 
 

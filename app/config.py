@@ -122,6 +122,37 @@ class ImageConfig:
     max_in_body: int = field(default_factory=lambda: _env_int("IMAGE_MAX_IN_BODY", 3))
 
 
+def _parse_rates(raw: str) -> dict[str, tuple[float, float]]:
+    """`prefix:in_per_million:out_per_million,...` into a rate table."""
+    rates: dict[str, tuple[float, float]] = {}
+    for entry in raw.split(","):
+        parts = [p.strip() for p in entry.split(":")]
+        if len(parts) != 3 or not parts[0]:
+            continue
+        try:
+            rates[parts[0]] = (float(parts[1]), float(parts[2]))
+        except ValueError:
+            continue
+    return rates
+
+
+# Published rates change; these are a starting point, not a promise. Override
+# with MODEL_RATES rather than editing them here.
+DEFAULT_RATES = "gemini-3.7-flash:0.30:2.50,gemini-3.5-flash:0.30:2.50,gemini-pro-latest:1.25:10.00,gemini-3:1.25:10.00"
+
+
+@dataclass(frozen=True)
+class CostConfig:
+    """What a run is estimated to cost. Tokens are counted; money is inferred."""
+
+    rates: dict[str, tuple[float, float]] = field(
+        default_factory=lambda: _parse_rates(_env("MODEL_RATES", DEFAULT_RATES))
+    )
+    image_usd: float = field(
+        default_factory=lambda: _env_float("IMAGE_PRICE_USD", 0.04)
+    )
+
+
 @dataclass(frozen=True)
 class NotifyConfig:
     telegram_token: str = field(default_factory=lambda: _env("TELEGRAM_BOT_TOKEN"))
@@ -139,6 +170,7 @@ class Settings:
     content: ContentConfig = field(default_factory=ContentConfig)
     quality: QualityConfig = field(default_factory=QualityConfig)
     images: ImageConfig = field(default_factory=ImageConfig)
+    cost: CostConfig = field(default_factory=CostConfig)
     notify: NotifyConfig = field(default_factory=NotifyConfig)
     db_path: str = field(default_factory=lambda: _env("DB_PATH", "data/pipeline.db"))
     dry_run: bool = field(default_factory=lambda: _env_bool("DRY_RUN", False))
