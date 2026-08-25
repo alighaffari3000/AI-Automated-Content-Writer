@@ -212,3 +212,6 @@ credentials*.json
 data/
 logs/
 *.db
+
+# graphify build output
+graphify-out/
