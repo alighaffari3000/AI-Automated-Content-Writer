@@ -147,11 +147,19 @@ uv run python -m app.cli run
 Set `DRY_RUN=true` for the first runs — the pipeline does everything except
 send the article anywhere.
 
-### Daily schedule
+### Running it permanently
 
+On a server, with Docker and a systemd timer:
+
+```bash
+sudo ./deploy/install.sh
 ```
-0 6 * * *  cd /srv/content-writer && /usr/local/bin/uv run python -m app.cli run >> logs/run.log 2>&1
-```
+
+That builds the image, puts the database somewhere it will survive a redeploy,
+and enables two timers: one that writes an article every morning, one that backs
+the database up every night. [docs/DEPLOY.md](docs/DEPLOY.md) has the whole
+runbook — what the target site must provide first, what to fill in, how to make
+the first run publish nothing, and what to do when something breaks.
 
 ## What the site must provide
 

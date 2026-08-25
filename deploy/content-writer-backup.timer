@@ -1,0 +1,15 @@
+# The database is the only thing here that cannot be rebuilt: the fact registry
+# with its shelf lives, what has been written, and which subjects are covered.
+# It is one file, so backing it up is cheap and losing it is not.
+
+[Unit]
+Description=Back up the pipeline database daily
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+Persistent=true
+RandomizedDelaySec=10m
+Unit=content-writer-backup.service
+
+[Install]
+WantedBy=timers.target

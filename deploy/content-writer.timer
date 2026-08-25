@@ -1,0 +1,24 @@
+# When the article gets written. Times are the server's own local time, so set
+# the server's timezone (`timedatectl set-timezone ...`) rather than doing the
+# arithmetic here.
+
+[Unit]
+Description=Write one article a day
+Documentation=https://github.com/alighaffari3000/AI-Automated-Content-Writer
+
+[Timer]
+OnCalendar=*-*-* 06:00:00
+
+# If the machine was off or rebooting at the hour, write the article on the
+# next boot instead of skipping the day. A pipeline that silently misses days
+# is one nobody notices has stopped.
+Persistent=true
+
+# Nothing depends on the exact minute, and a fixed one is a small unkindness to
+# whichever API is being called by everyone else's cron at 06:00 sharp.
+RandomizedDelaySec=15m
+
+Unit=content-writer.service
+
+[Install]
+WantedBy=timers.target

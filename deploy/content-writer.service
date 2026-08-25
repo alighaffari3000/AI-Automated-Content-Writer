@@ -1,0 +1,41 @@
+# One article, once. The timer beside this file decides when.
+#
+# Installed by deploy/install.sh to /etc/systemd/system/. Run it by hand with
+#   sudo systemctl start content-writer.service
+# and read what happened with
+#   journalctl -u content-writer.service -n 200 --no-pager
+
+[Unit]
+Description=Write today's article
+Documentation=https://github.com/alighaffari3000/AI-Automated-Content-Writer
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+
+# A run is seven model calls and takes a couple of minutes. This ceiling exists
+# for the run that hangs on a network that never answers: without it, a stuck
+# container would still be holding the timer tomorrow.
+TimeoutStartSec=1800
+
+# --rm because the container is disposable; everything worth keeping is in the
+# volume. The name makes a stuck run easy to find with `docker ps`.
+#
+# The environment file is mounted rather than passed with --env-file: it is
+# then read by python-dotenv, which understands quotes and comments the same
+# way the .env.example in the repository is written.
+ExecStart=/usr/bin/docker run --rm \
+    --name content-writer \
+    -v /var/lib/content-writer:/code/data \
+    -v /etc/content-writer/env:/code/.env:ro \
+    --add-host=host.docker.internal:host-gateway \
+    ai-content-writer:latest
+
+# If the run is still going when systemd stops it, stop the container too,
+# rather than leaving it orphaned holding the database.
+ExecStopPost=-/usr/bin/docker rm -f content-writer
+
+[Install]
+WantedBy=multi-user.target

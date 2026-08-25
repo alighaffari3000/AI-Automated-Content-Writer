@@ -1,0 +1,12 @@
+[Unit]
+Description=Back up the pipeline database
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+TimeoutStartSec=600
+ExecStart=/usr/local/lib/content-writer/backup.sh
+
+[Install]
+WantedBy=multi-user.target
