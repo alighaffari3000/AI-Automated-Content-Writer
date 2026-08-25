@@ -60,6 +60,21 @@ confidence level, and whether the claim is usable at all. The writer may only
 state something checkable if a usable record backs it. General explanatory
 sentences need no record; registering truisms would only bury the real claims.
 
+**The registry is checked against the world.** Sources come from the search's
+own grounding metadata rather than from the model's text, are ranked by who
+published them, and — the part that closes the loop — the page each fact cites
+is read and the passage it quotes is looked for there. A claim whose passage is
+not on the page it cites is the one failure no reviewer can catch, because the
+article and the registry agree with each other perfectly.
+
+**What has been verified is remembered.** A claim that survives the audit is
+stored with a shelf life: days for a price, months for a specification, years
+for a standard. Later runs are offered it with a citable id of its own, so
+reuse passes the same audit as a fresh search rather than being a special case.
+Nothing is reused past its expiry — that is what makes reuse safe, and
+`python -m app.cli facts list` is how you see what the pipeline currently
+believes.
+
 **The gate is code.** `app/rules.py` decides. Any critical issue blocks. A
 citation the registry does not support blocks — and that check runs in Python,
 so an invented source cannot survive by sounding convincing. Below the score
@@ -156,6 +171,9 @@ The settings worth knowing:
 | `CONTENT_DOMAIN` / `CONTENT_AUDIENCE` / `CONTENT_TONE` | what the site is about and who reads it |
 | `MAX_REVISION_ROUNDS` | how many times a draft may be sent back (default 3) |
 | `MIN_AVERAGE_SCORE` / `MIN_SEO_SCORE` | the bars the gate enforces |
+| `SOURCE_MANUFACTURERS` / `SOURCE_PUBLICATIONS` | who counts as an authority in your subject; without them a datasheet ranks no higher than a blog |
+| `SOURCE_VERIFY_EVIDENCE` | read each cited page and look for the passage it was quoted for |
+| `FACT_TTL_*_DAYS` | how long a verified claim may be reused before it must be checked again |
 | `SEO_TITLE_MAX` / `SEO_DESCRIPTION_MAX` | the lengths the gate counts, in characters |
 | `SEO_KNOWN_PATHS` | pages that exist but are neither articles nor products, so a link to them is not read as broken |
 | `SITE_PUBLIC_URL` | where readers see the site, for link checking and structured data |
@@ -168,14 +186,16 @@ app/
   agent.py        the workflow graph — the shape of a run
   rules.py        the gate: the only thing that decides what ships
   seo.py          what can be measured about a draft, measured
+  sources.py      where a claim came from, and whether that page says it
+  normalize.py    comparing text that was written twice
   structured_data.py  JSON-LD, built from the registry and the catalogue
   schemas.py      the contracts every stage speaks
   prompts.py      agent instructions
   config.py       everything site-specific, read from the environment
-  store.py        SQLite: topics, articles, reviews
+  store.py        SQLite: categories, topics, articles, reviews, facts
   site_client.py  the only door to the target site
   notify.py       Telegram, behind a protocol so another channel is one file
-  cli.py          check / topics / run
+  cli.py          check / run / categories / topics / facts / cost / eval
 tests/
   unit/           the gate's behaviour, pinned down
   integration/    the graph's shape

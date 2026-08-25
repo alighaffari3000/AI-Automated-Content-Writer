@@ -146,6 +146,21 @@ def cmd_check(args: argparse.Namespace) -> int:
             "structured data",
             "on" if settings.seo.structured_data else "off",
         ),
+        (
+            "sources",
+            f"{len(settings.sources.manufacturers)} manufacturer(s), "
+            f"{len(settings.sources.publications)} publication(s) configured; "
+            + ("passage checked" if settings.sources.verify_evidence else "passage unchecked"),
+        ),
+        (
+            "registry",
+            (
+                f"on, {settings.registry.ttl_days.get('specification')}d for a "
+                f"specification, {settings.registry.ttl_days.get('price')}d for a price"
+                if settings.registry.enabled
+                else "off"
+            ),
+        ),
         ("dry run", "yes" if settings.dry_run else "no"),
     ]
     width = max(len(k) for k, _ in rows)
@@ -267,6 +282,44 @@ def cmd_cost(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_facts_list(args: argparse.Namespace) -> int:
+    """What the pipeline currently believes, and until when."""
+    store = get_store()
+    stats = store.fact_stats()
+    rows = store.recent_facts(args.limit, live_only=not args.all)
+
+    print(
+        f"{stats['live']} live fact(s), {stats['expired']} expired, "
+        f"reused {stats['reuses']} time(s)."
+    )
+    for kind, counts in sorted(stats["by_kind"].items()):
+        print(f"  {kind:<15} {counts['live']:>4} live  {counts['expired']:>4} expired")
+    if not rows:
+        print("\nNothing stored yet — facts are remembered as articles are written.")
+        return 0
+
+    print()
+    for row in rows:
+        state = "verified" if row["verified"] else "on authority"
+        print(
+            f"#{row['id']:<4} {row['kind']:<14} {row['confidence']:<7} {state:<12}"
+            f" until {row['expires_at'][:10]}  used {row['times_used']}x"
+        )
+        print(f"      {row['claim'][:96]}")
+        if args.verbose and row["source_url"]:
+            print(f"      ↳ {row['source_url']}")
+    return 0
+
+
+def cmd_facts_forget(args: argparse.Namespace) -> int:
+    """Drop a claim that is stored and wrong."""
+    if get_store().forget_fact(args.id):
+        print(f"fact #{args.id} forgotten.")
+        return 0
+    print(f"No fact with id {args.id}.")
+    return 1
+
+
 def cmd_topics_list(args: argparse.Namespace) -> int:
     """What the planner has already invented, newest first."""
     with get_store()._connect() as conn:  # noqa: SLF001
@@ -340,6 +393,23 @@ def main(argv: list[str] | None = None) -> int:
     cost = sub.add_parser("cost", help="what runs have been costing", parents=[common])
     cost.add_argument("--limit", type=int, default=30)
     cost.set_defaults(func=cmd_cost)
+
+    facts = sub.add_parser("facts", help="what the pipeline has verified and remembers")
+    facts_sub = facts.add_subparsers(dest="facts_command", required=True)
+    facts_list = facts_sub.add_parser(
+        "list", help="stored claims and their shelf life", parents=[common]
+    )
+    facts_list.add_argument("--limit", type=int, default=30)
+    facts_list.add_argument(
+        "--all", action="store_true", help="include claims past their shelf life"
+    )
+    facts_list.set_defaults(func=cmd_facts_list)
+
+    forget = facts_sub.add_parser(
+        "forget", help="drop a stored claim that turned out to be wrong", parents=[common]
+    )
+    forget.add_argument("id", type=int)
+    forget.set_defaults(func=cmd_facts_forget)
 
     topics = sub.add_parser("topics", help="what the planner has written about")
     topics_sub = topics.add_subparsers(dest="topics_command", required=True)

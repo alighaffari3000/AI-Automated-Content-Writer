@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any
 
 from google.adk.agents import LlmAgent
@@ -39,7 +40,15 @@ from . import prompts, seo, structured_data
 from .config import settings
 from .images import ImageGenerator, ImageRequest, find_markers, replace_markers
 from .notify import build_notifier
-from .sources import SourceIndex, audit_fact, check_reachable, harvest
+from .normalize import claim_key
+from .sources import (
+    SourceIndex,
+    audit_fact,
+    authority_from,
+    check_reachable,
+    fetch_pages,
+    harvest,
+)
 from .rules import evaluate_reviews
 from .schemas import (
     ArticleDraft,
@@ -219,7 +228,14 @@ def open_article(ctx: Context, node_input: Any) -> Event:
     store.mark_category_used(category_id)
     article_id = store.start_article(topic_id)
 
-    logger.info("Today's subject: %r (article_id=%s)", title, article_id)
+    known = recall_facts(title, proposal.get("keywords") or [])
+
+    logger.info(
+        "Today's subject: %r (article_id=%s, %s fact(s) recalled from the registry)",
+        title,
+        article_id,
+        len(known),
+    )
 
     return Event(
         output={"topic": title, "article_id": article_id},
@@ -230,8 +246,43 @@ def open_article(ctx: Context, node_input: Any) -> Event:
             "topic_title": title,
             "topic_notes": str(proposal.get("angle", "")),
             "topic_keywords": keywords,
+            "known_facts": known,
+            "known_facts_prompt": prompts.format_known_facts(known),
         },
     )
+
+
+def recall_facts(title: str, keywords: list[str]) -> list[dict[str, Any]]:
+    """What the registry already knows that bears on today's subject.
+
+    Each one arrives with a citable id of its own, so a fact reused from the
+    registry passes the same audit as a fact found this morning — it cites a
+    source the pipeline can see, which is the rule that makes the registry
+    trustworthy rather than merely convenient.
+    """
+    if not settings.registry.enabled:
+        return []
+
+    terms = [w for w in re.split(r"[\s,،/]+", f"{title} {' '.join(keywords)}") if w]
+    rows = get_store().live_facts(terms, limit=settings.registry.max_reused)
+    return [
+        {
+            "reg_id": f"reg-{number}",
+            "claim_key": row["claim_key"],
+            "claim": row["claim"],
+            "kind": row["kind"],
+            "confidence": row["confidence"],
+            "evidence": row["evidence"],
+            "source": row["source"],
+            "source_url": row["source_url"],
+            "tier": row["tier"],
+            "tier_label": row["tier_label"],
+            "verified": bool(row["verified"]),
+            "verified_at": (row["verified_at"] or "")[:10],
+            "expires_at": (row["expires_at"] or "")[:10],
+        }
+        for number, row in enumerate(rows, start=1)
+    ]
 
 
 def collect_sources(callback_context: CallbackContext) -> None:
@@ -240,11 +291,29 @@ def collect_sources(callback_context: CallbackContext) -> None:
     Grounding puts its sources in the response metadata, not in the model's
     text. Read from the session's events rather than trusting the prose, or
     every citation in the registry is whatever the model chose to type.
+
+    The registry's own sources join the same list here, with ids of their own.
+    A fact reused from the registry then cites something the audit can look up,
+    exactly like a fact found this morning — one rule for citations, not two.
     """
     session = callback_context._invocation_context.session  # noqa: SLF001
-    index = harvest(list(session.events))
+    index = harvest(
+        list(session.events),
+        SourceIndex(authority=authority_from(settings.sources)),
+    )
     if index:
         check_reachable(index)
+
+    for known in callback_context.state.get("known_facts") or []:
+        index.add_known(
+            short_id=str(known.get("reg_id")),
+            url=str(known.get("source_url") or ""),
+            title=str(known.get("source") or ""),
+            tier=int(known.get("tier") or 1),
+            tier_label=str(known.get("tier_label") or "general web"),
+            verified_at=str(known.get("verified_at") or ""),
+        )
+
     callback_context.state["source_index"] = index.to_list()
     callback_context.state["sources_for_prompt"] = index.as_prompt()
     logger.info("Grounding produced %s distinct source(s).", len(index.sources))
@@ -263,26 +332,39 @@ def persist_registry(ctx: Context, node_input: Any) -> Event:
     raw = ctx.state.get("research_bundle") or {}
     bundle = ResearchBundle(**raw) if raw else ResearchBundle(angle="", outline=[])
 
-    index = SourceIndex()
-    for entry in ctx.state.get("source_index") or []:
-        source = index.add(
-            url=str(entry.get("url", "")),
-            title=str(entry.get("title", "")),
-            domain=str(entry.get("domain", "")),
-        )
-        source.reachable = entry.get("reachable")
-        source.note = str(entry.get("note", ""))
+    index = SourceIndex.from_list(
+        ctx.state.get("source_index") or [],
+        authority=authority_from(settings.sources),
+    )
+
+    # Read only the pages some fact actually leans on. A search returns twenty
+    # sources and an article rests on six, so fetching the rest would be paying
+    # for pages nobody cited.
+    fetch_pages(
+        index,
+        [sid for fact in bundle.facts for sid in fact.source_ids],
+        settings.sources,
+    )
 
     downgraded = 0
     for fact in bundle.facts:
-        confidence, allowed, note = audit_fact(fact.source_ids, index, fact.confidence)
-        if confidence != fact.confidence or allowed != fact.allowed:
+        audit = audit_fact(
+            fact.source_ids,
+            index,
+            fact.confidence,
+            evidence=fact.evidence,
+            config=settings.sources,
+        )
+        if audit.confidence != fact.confidence or audit.allowed != fact.allowed:
             downgraded += 1
-        fact.confidence = confidence
-        fact.allowed = fact.allowed and allowed
-        fact.audit_note = note
-        urls = [s.url for s in (index.get(sid) for sid in fact.source_ids) if s]
-        fact.source_url = urls[0] if urls else ""
+        fact.confidence = audit.confidence
+        fact.allowed = fact.allowed and audit.allowed
+        fact.audit_note = audit.note
+        fact.verified = audit.verified
+        # The strongest source it cites, not the first: this URL is what a
+        # reader following the claim ends up at.
+        cited = [s for s in (index.get(sid) for sid in fact.source_ids) if s]
+        fact.source_url = max(cited, key=lambda s: s.tier).url if cited else ""
 
     allowed = bundle.allowed_facts
     article_id = int(ctx.state.get("article_id", 0))
@@ -291,10 +373,14 @@ def persist_registry(ctx: Context, node_input: Any) -> Event:
             article_id, [f.model_dump() for f in bundle.facts]
         )
 
+    remember(bundle, index, ctx)
+
     logger.info(
-        "Fact registry: %s registered, %s usable, %s adjusted by the source audit.",
+        "Fact registry: %s registered, %s usable, %s verified at the source, "
+        "%s adjusted by the audit.",
         len(bundle.facts),
         len(allowed),
+        sum(1 for f in allowed if f.verified),
         downgraded,
     )
     if not allowed:
@@ -314,7 +400,14 @@ def persist_registry(ctx: Context, node_input: Any) -> Event:
     return Event(
         output=bundle.model_dump(),
         route="ok",
-        state={"target_keywords": ", ".join(bundle.target_keywords)},
+        state={
+            "target_keywords": ", ".join(bundle.target_keywords),
+            # Put the index back with what reading the pages taught us —
+            # publication dates, pages that turned out unreadable — so the
+            # reviewers judge the sources as they finally stood.
+            "source_index": index.to_list(),
+            "sources_for_prompt": index.as_prompt(),
+        },
     )
 
 
@@ -325,6 +418,55 @@ def site_index(ctx: Context) -> seo.SiteIndex:
         extra_paths=settings.seo.known_paths,
         public_url=settings.site.public_url,
     )
+
+
+def remember(bundle: ResearchBundle, index: SourceIndex, ctx: Context) -> None:
+    """Hand what survived the audit to the registry, with a shelf life.
+
+    Only what the audit accepted, and only in the two forms worth reusing: a
+    passage found where it was cited, or a source whose authority was never in
+    question. Everything else has to be looked up again tomorrow, which is the
+    correct price for not having checked it today.
+    """
+    if not settings.registry.enabled:
+        return
+
+    store = get_store()
+    article_id = int(ctx.state.get("article_id", 0))
+    rows = []
+    for fact in bundle.allowed_facts:
+        cited = [s for s in (index.get(sid) for sid in fact.source_ids) if s]
+        # A fact that rests only on the registry's own sources was reused, not
+        # re-verified. Storing it again would push its expiry date forward
+        # every time it was reused — which is how a shelf life quietly becomes
+        # no shelf life at all, and a stale price outlives the year it was true.
+        if cited and all(s.from_registry for s in cited):
+            continue
+        best = max(cited, key=lambda s: s.tier) if cited else None
+        rows.append(
+            {
+                **fact.model_dump(),
+                "tier": best.tier if best else 1,
+                "tier_label": best.tier_label if best else "",
+                "source_url": best.url if best else fact.source_url,
+            }
+        )
+    stored = store.remember_facts(article_id, rows, settings.registry.shelf_life)
+
+    # Count a reuse where one actually happened: a fact that cited the
+    # registry's own id rather than a source found this morning.
+    reused = {
+        claim_key(fact.claim)
+        for fact in bundle.allowed_facts
+        if any(sid.startswith("reg-") for sid in fact.source_ids)
+    }
+    store.mark_facts_used(sorted(reused))
+    if stored or reused:
+        logger.info(
+            "Registry: %s claim(s) remembered, %s reused from earlier runs.",
+            stored,
+            len(reused),
+        )
 
 
 def evaluate_gate(ctx: Context, node_input: dict[str, Any]) -> Event:

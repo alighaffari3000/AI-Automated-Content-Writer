@@ -56,14 +56,18 @@ it, and the fetch is deterministic and auditable.
 
 Phase 1 proves the loop runs. Phase 2 makes its verdicts defensible.
 
-**Source validation, as its own step.** Today the researcher records a source
-and a reviewer takes its word for it. A dedicated validator would check that
-the URL resolves, that the passage quoted actually appears there, that the
-source is primary rather than a reseller repeating a manufacturer, and that it
-is recent enough to still be true. Sources rank: manufacturer documentation,
-then standards bodies, then technical organisations, then publications, then
-industry sites, then the general web. A source that cannot be reached lowers a
-claim's confidence rather than failing the run.
+**Source validation, as its own step. ✅ Shipped.** `app/sources.py` resolves
+each URL through its redirect to the real publisher, ranks it, reads the page
+the fact cites and looks for the quoted passage in it. A passage that is not
+there drops the claim to LOW and blocks a HIGH-confidence one — the failure no
+reviewer can catch, because the article and the registry agree perfectly and
+the page they rest on never said it. Age counts only against the sources where
+age means something: a datasheet from four years ago is still the datasheet, a
+market figure that old is a guess. Nothing here fails a run: an unreachable
+source, an unreadable PDF or a page too thin to judge leaves a claim weakened
+rather than killed. Who counts as a manufacturer or a trade publication is
+configuration, since that is the one part of the ranking a public pipeline
+cannot know.
 
 **Five reviewers instead of three.** The merged reviewers are a compromise: the
 technical reviewer currently also validates sources, and the editorial reviewer
@@ -72,12 +76,18 @@ measurably improves what a reviewer catches. The cost is more model calls per
 article per day, which is why it waits for evidence that the merged pair is
 actually missing things.
 
-**A persistent fact registry, with expiry.** Facts currently live for one run
-and are archived as JSON on the article row. Making them persistent means a
-claim verified once can be reused — cheaper every day, and consistent between
-articles, so two articles never quote different numbers for the same product.
-Each fact needs a shelf life: prices and stock expire in days, technical
-specifications in months. The archived JSON from phase 1 seeds this.
+**A persistent fact registry, with expiry. ✅ Shipped.** A `facts` table keyed
+on the normalised claim, so the same fact in different words or different
+digits updates one row instead of becoming a second opinion — and a claim that
+differs by a number is a different claim, which is what happens when a
+specification changes. Shelf life follows the kind of claim: days for a price,
+months for a specification, years for a standard. Two kinds of fact are kept:
+one whose passage was found where it was cited, and one resting on an authority
+that was never in question, because the best sources are often the least
+readable — a datasheet is a PDF and no passage check can look inside it.
+Reuse is not a special case: a remembered fact arrives with a citable id of its
+own and passes the same audit as a fresh search. Expired rows stay, as phase
+3's signal that the article resting on them has gone stale.
 
 **A real evaluation suite.** Not pytest — model output is not deterministic and
 asserting on it produces flaky tests that teach nothing. An eval dataset with

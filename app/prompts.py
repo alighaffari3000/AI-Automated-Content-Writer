@@ -22,6 +22,42 @@ is a reviewer the pipeline could delete. Look for the weakest part of the draft
 first and report it, even when the whole is good.
 """.strip()
 
+def format_known_facts(rows: list[dict]) -> str:
+    """The registry's live facts, as a citable list.
+
+    Each carries its own id, so reusing one is a citation like any other rather
+    than a special case the audit has to be taught about. The shelf life is
+    shown because a fact three days from expiry is one worth double-checking if
+    the search happens to pass it anyway.
+    """
+    if not rows:
+        return "(nothing in the registry bears on this subject yet)"
+    lines = []
+    for row in rows:
+        state = "verified at the source" if row.get("verified") else "accepted on authority"
+        lines.append(
+            f"[{row['reg_id']}] {row['claim']}\n"
+            f"    {row.get('kind', 'general')}, confidence {row.get('confidence', '')}, "
+            f"{row.get('tier_label', '')}, {state}\n"
+            f"    checked {row.get('verified_at', '')}, good until "
+            f"{row.get('expires_at', '')} — {row.get('source_url', '')}"
+        )
+    return "\n".join(lines)
+
+
+REGISTRY_RULE = """
+Facts already verified, still inside their shelf life, and citable by their
+reg-N id exactly as a search result is citable by its src-N id:
+{known_facts_prompt?}
+
+These do not need researching again — that is what the shelf life is for. Two
+rules hold, though. Reuse a claim as it stands rather than rewording it, so the
+registry keeps one answer per question instead of accumulating variants. And if
+what you find contradicts one of them, say so in your notes rather than quietly
+picking a side: a stored fact that has gone wrong is worth more attention than
+a new one, because every future article would inherit it.
+""".strip()
+
 FACT_RULE = """
 A FACT is a claim a reader could check: a number, a specification, a price, a
 date, a standard, a comparison, an economic figure. General explanatory
@@ -91,11 +127,17 @@ Context from the site you are writing for:
 
 {FACT_RULE}
 
-Use web search to gather what an accurate article needs. For every checkable
-claim, record: the claim itself, who published it, the exact passage that
-supports it, and how strongly the source backs it up. Do not transcribe URLs —
-they are captured automatically from the search itself, and a URL typed from
-memory is the one thing here that cannot be checked.
+{REGISTRY_RULE}
+
+Use web search to gather what an accurate article needs, starting from what the
+registry does not already cover. For every checkable claim, record: the claim
+itself, who published it, the exact passage that supports it, and how strongly
+the source backs it up. Quote that passage as it is written rather than
+summarising it — the page is fetched afterwards and the passage looked for in
+it, so a tidied quotation can fail a check the claim itself would have passed.
+Do not transcribe URLs — they are captured automatically from the search
+itself, and a URL typed from memory is the one thing here that cannot be
+checked.
 
 Go after primary sources deliberately, because the article is only as good as
 what stands behind it. Search for the datasheet, the standard, the
@@ -129,15 +171,19 @@ Topic: {{topic_title}}
 The sources the search actually reached, with what each one is worth:
 {{sources_for_prompt?}}
 
-These ids are the only citations that exist. Every fact must list the src-N
-ids that genuinely support it in source_ids — an id you invent, or one that is
-not in the list above, invalidates the fact when it is audited. Cite the
-strongest source that supports a claim, not the first one; a number from a
-manufacturer's own documentation and the same number from a shop listing are
-not equally worth publishing. Leave source_url empty — it is filled in from
-the real list.
+These ids are the only citations that exist. Every fact must list the ids that
+genuinely support it in source_ids — an id you invent, or one that is not in
+the list above, invalidates the fact when it is audited. Cite the strongest
+source that supports a claim, not the first one; a number from a manufacturer's
+own documentation and the same number from a shop listing are not equally worth
+publishing. Leave source_url empty — it is filled in from the real list.
 
 {FACT_RULE}
+
+{REGISTRY_RULE}
+
+To reuse one, register it with its claim unchanged and cite its reg-N id. It
+needs no other source.
 
 Already covered in this subject area, which this article must not restate:
 {{topics_in_category?}}
@@ -153,7 +199,12 @@ Produce:
   FACT-002, ...). Set allowed=false for any claim whose source is too weak to
   write from — a reseller page for a technical specification, an unreachable
   URL, a source that does not actually contain the claim. Set confidence
-  honestly; HIGH means primary documentation.
+  honestly; HIGH means primary documentation. Set kind by how long the claim
+  stays true: a price or a stock level is stale within days, a product
+  specification within months, a standard or a physical property within years.
+  It decides how long the claim may be reused before it must be checked again,
+  so guessing generously here is how a stale number reaches next year's
+  article.
 
 Register only the facts the article will actually need. Do not invent sources,
 and do not upgrade a weak source to make a claim usable.
@@ -289,7 +340,10 @@ Judge only what is in front of you.
 
 Fact registry (the only sanctioned source of claims). Each fact has already
 been audited against the sources the search really reached: `confidence` may
-have been downgraded and `audit_note` says why.
+have been downgraded and `audit_note` says why. `verified` means the quoted
+passage was actually found on the page it cites — an unverified fact is not
+disqualified, but it is one whose page could not be read, so a draft that
+states it flatly is claiming more than anyone here has confirmed.
 {{research_bundle}}
 
 The sources themselves, with how much authority each carries:

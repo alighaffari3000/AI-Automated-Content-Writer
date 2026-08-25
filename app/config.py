@@ -113,6 +113,89 @@ class QualityConfig:
 
 
 @dataclass(frozen=True)
+class SourceConfig:
+    """Who is worth believing, and how hard to check them.
+
+    The domain lists are empty by default on purpose. Which manufacturers and
+    which trade publications count as authorities is the one thing about source
+    ranking that cannot be universal — it is what the site writes about — and a
+    list of solar companies compiled into this module would make the pipeline
+    quietly wrong for every site that is not about solar. `.env.example` shows
+    what a filled-in list looks like.
+
+    Standards bodies and universities need no list: `.gov`, `.edu` and the
+    handful of cross-industry standards hosts mean the same thing everywhere,
+    so those defaults live in `sources.py` and these two settings extend them.
+    """
+
+    manufacturers: tuple[str, ...] = field(
+        default_factory=lambda: _env_tuple("SOURCE_MANUFACTURERS")
+    )
+    publications: tuple[str, ...] = field(
+        default_factory=lambda: _env_tuple("SOURCE_PUBLICATIONS")
+    )
+    standards: tuple[str, ...] = field(
+        default_factory=lambda: _env_tuple("SOURCE_STANDARDS")
+    )
+    academic: tuple[str, ...] = field(
+        default_factory=lambda: _env_tuple("SOURCE_ACADEMIC")
+    )
+    weak_domains: tuple[str, ...] = field(
+        default_factory=lambda: _env_tuple("SOURCE_WEAK_DOMAINS")
+    )
+    # Read the page a fact cites and look for the passage it quotes. Off, the
+    # registry is only as good as the model's honesty about what it read.
+    verify_evidence: bool = field(
+        default_factory=lambda: _env_bool("SOURCE_VERIFY_EVIDENCE", True)
+    )
+    # How many pages one run may download to do that. Each is one request.
+    fetch_limit: int = field(default_factory=lambda: _env_int("SOURCE_FETCH_LIMIT", 12))
+    # Past this, a trade publication or a blog is treated as possibly stale.
+    # Standards and manufacturer documentation are exempt: an old datasheet is
+    # still the datasheet, while a three-year-old market figure is a guess.
+    max_age_days: int = field(
+        default_factory=lambda: _env_int("SOURCE_MAX_AGE_DAYS", 1095)
+    )
+
+
+# How long a verified claim stays true, by what kind of claim it is. A price is
+# stale in a week; the chemistry of a battery is not. These are the shelf lives
+# the registry hands out when it stores a fact.
+DEFAULT_TTL = {
+    "price": 7,
+    "availability": 3,
+    "specification": 180,
+    "standard": 730,
+    "general": 90,
+}
+
+
+@dataclass(frozen=True)
+class RegistryConfig:
+    """The persistent fact registry.
+
+    A claim verified once can be reused: cheaper every day, and consistent
+    between articles, so two pieces never quote different numbers for the same
+    product. Everything rests on expiry — a fact with no shelf life is a fact
+    that goes wrong silently.
+    """
+
+    enabled: bool = field(default_factory=lambda: _env_bool("FACT_REGISTRY", True))
+    ttl_days: dict[str, int] = field(
+        default_factory=lambda: {
+            kind: _env_int(f"FACT_TTL_{kind.upper()}_DAYS", default)
+            for kind, default in DEFAULT_TTL.items()
+        }
+    )
+    # How many remembered facts one run may be offered. The prompt has to stay
+    # readable, and a researcher handed two hundred facts reads none of them.
+    max_reused: int = field(default_factory=lambda: _env_int("FACT_MAX_REUSED", 20))
+
+    def shelf_life(self, kind: str) -> int:
+        return self.ttl_days.get(kind, self.ttl_days.get("general", 90))
+
+
+@dataclass(frozen=True)
 class SeoConfig:
     """The measurable half of SEO.
 
@@ -209,6 +292,8 @@ class Settings:
     site: SiteConfig = field(default_factory=SiteConfig)
     content: ContentConfig = field(default_factory=ContentConfig)
     quality: QualityConfig = field(default_factory=QualityConfig)
+    sources: SourceConfig = field(default_factory=SourceConfig)
+    registry: RegistryConfig = field(default_factory=RegistryConfig)
     seo: SeoConfig = field(default_factory=SeoConfig)
     images: ImageConfig = field(default_factory=ImageConfig)
     cost: CostConfig = field(default_factory=CostConfig)

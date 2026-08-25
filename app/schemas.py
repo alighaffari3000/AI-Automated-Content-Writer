@@ -11,6 +11,8 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 Confidence = Literal["HIGH", "MEDIUM", "LOW"]
+# What kind of claim this is, which is what decides how long it stays true.
+FactKind = Literal["price", "availability", "specification", "standard", "general"]
 Severity = Literal["critical", "major", "minor"]
 Verdict = Literal["APPROVE", "REVISE", "ESCALATE"]
 
@@ -60,8 +62,22 @@ class Fact(BaseModel):
         default="",
         description="Filled in from the real source list; leave empty.",
     )
-    evidence: str = Field(description="The passage or data the claim rests on.")
+    evidence: str = Field(
+        description=(
+            "The passage the claim rests on, quoted from the source as closely "
+            "as you can. It is looked for on that page afterwards, so an "
+            "invented or heavily reworded passage invalidates the fact."
+        )
+    )
     confidence: Confidence = Field(description="How well the source supports it.")
+    kind: FactKind = Field(
+        default="general",
+        description=(
+            "price and availability go stale in days; a specification in "
+            "months; a standard or a physical constant in years. This decides "
+            "how long the claim may be reused before it must be checked again."
+        ),
+    )
     allowed: bool = Field(
         default=True,
         description="False when the source is too weak to write from.",
@@ -69,6 +85,13 @@ class Fact(BaseModel):
     audit_note: str = Field(
         default="",
         description="Filled in by the source audit; leave empty.",
+    )
+    verified: bool = Field(
+        default=False,
+        description=(
+            "Set by the source audit when the quoted passage was actually "
+            "found on the page it cites; leave empty."
+        ),
     )
 
 

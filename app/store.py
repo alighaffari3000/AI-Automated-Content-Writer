@@ -1,20 +1,29 @@
 """The pipeline's own SQLite database.
 
-Three tables, per the MVP scope: what to write about, what was written, and how
-it was judged. Facts are kept as JSON on the article row rather than in their
-own table — no reuse and no expiry yet, but every published claim stays
-traceable, and a future persistent registry can be seeded from this column.
+What to write about, what was written, how it was judged — and what has been
+verified. The last of those is the fact registry: a claim that survived the
+source audit is kept, with a shelf life, so tomorrow's article can rest on it
+without paying to verify it again and, more importantly, so two articles never
+quote different numbers for the same thing.
+
+Expiry is the whole discipline. A price is stale in a week, a specification in
+months, a standard in years; a registry without shelf lives would not save
+work, it would industrialise a stale claim across every article that touched
+it. Facts are still archived as JSON on the article row as well, because that
+column is the audit trail of what a particular article actually rested on.
 """
 
 from __future__ import annotations
 
 import json
 import sqlite3
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+
+from .normalize import claim_key
 
 SCHEMA = """
 -- What the site writes about. This is the permanent part, and the only part a
@@ -72,8 +81,33 @@ CREATE TABLE IF NOT EXISTS reviews (
     created_at    TEXT    NOT NULL
 );
 
+-- Claims that survived the source audit, with the date each stops being
+-- trustworthy. `claim_key` is the normalised claim, so the same fact arriving
+-- in different words or different digits updates the row it already has
+-- instead of quietly becoming a second opinion.
+CREATE TABLE IF NOT EXISTS facts (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    claim_key     TEXT    NOT NULL UNIQUE,
+    claim         TEXT    NOT NULL,
+    kind          TEXT    NOT NULL DEFAULT 'general',
+    source        TEXT    NOT NULL DEFAULT '',
+    source_url    TEXT    NOT NULL DEFAULT '',
+    evidence      TEXT    NOT NULL DEFAULT '',
+    confidence    TEXT    NOT NULL DEFAULT 'MEDIUM',
+    tier          INTEGER NOT NULL DEFAULT 1,
+    tier_label    TEXT    NOT NULL DEFAULT '',
+    verified      INTEGER NOT NULL DEFAULT 0,
+    audit_note    TEXT    NOT NULL DEFAULT '',
+    times_used    INTEGER NOT NULL DEFAULT 0,
+    article_id    INTEGER REFERENCES articles(id),
+    first_seen    TEXT    NOT NULL,
+    verified_at   TEXT    NOT NULL,
+    expires_at    TEXT    NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_reviews_article ON reviews(article_id);
 CREATE INDEX IF NOT EXISTS idx_categories_status ON categories(status);
+CREATE INDEX IF NOT EXISTS idx_facts_expires ON facts(expires_at);
 """
 
 # Runs after the migration, because an older database reaches this point with a
@@ -122,6 +156,13 @@ DEFAULT_CATEGORIES = [
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _in_days(days: int) -> str:
+    """When something verified now stops being trusted."""
+    return (datetime.now(timezone.utc) + timedelta(days=max(days, 0))).isoformat(
+        timespec="seconds"
+    )
 
 
 class Store:
@@ -403,6 +444,159 @@ class Store:
                 " WHERE id = ?",
                 (error[:2000], _now(), article_id),
             )
+
+    # ------------------------------------------------------------------ facts
+
+    def remember_facts(
+        self,
+        article_id: int,
+        facts: list[dict[str, Any]],
+        shelf_life: Callable[[str], int],
+    ) -> int:
+        """Keep what the audit accepted, with the date it stops being trusted.
+
+        Two kinds of fact are worth remembering: one whose quoted passage was
+        actually found on the page it cites, and one resting on a source whose
+        authority was never in question — a standards body, a university, the
+        manufacturer's own documentation. The second exists because the best
+        sources are often the least readable: a datasheet is a PDF, and no
+        passage check can look inside it.
+
+        A claim that arrives again in different words updates the row it
+        already has. That is the point: the registry holds one answer per
+        question, so two articles cannot quote different numbers for the same
+        thing.
+        """
+        stored = 0
+        now = _now()
+        with self._connect() as conn:
+            for fact in facts:
+                claim = str(fact.get("claim") or "").strip()
+                key = claim_key(claim)
+                tier = int(fact.get("tier") or 1)
+                verified = bool(fact.get("verified"))
+                if not key or not fact.get("allowed", True):
+                    continue
+                if not verified and tier < 3:
+                    continue
+
+                kind = str(fact.get("kind") or "general")
+                expires = _in_days(shelf_life(kind))
+                conn.execute(
+                    "INSERT INTO facts (claim_key, claim, kind, source, source_url,"
+                    " evidence, confidence, tier, tier_label, verified, audit_note,"
+                    " article_id, first_seen, verified_at, expires_at)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                    " ON CONFLICT(claim_key) DO UPDATE SET"
+                    "   claim = excluded.claim,"
+                    "   kind = excluded.kind,"
+                    "   source = excluded.source,"
+                    "   source_url = excluded.source_url,"
+                    "   evidence = excluded.evidence,"
+                    "   confidence = excluded.confidence,"
+                    "   tier = excluded.tier,"
+                    "   tier_label = excluded.tier_label,"
+                    "   verified = excluded.verified,"
+                    "   audit_note = excluded.audit_note,"
+                    "   article_id = excluded.article_id,"
+                    "   verified_at = excluded.verified_at,"
+                    "   expires_at = excluded.expires_at",
+                    (
+                        key,
+                        claim,
+                        kind,
+                        str(fact.get("source") or ""),
+                        str(fact.get("source_url") or ""),
+                        str(fact.get("evidence") or ""),
+                        str(fact.get("confidence") or "MEDIUM"),
+                        tier,
+                        str(fact.get("tier_label") or ""),
+                        int(verified),
+                        str(fact.get("audit_note") or ""),
+                        article_id or None,
+                        now,
+                        now,
+                        expires,
+                    ),
+                )
+                stored += 1
+        return stored
+
+    def live_facts(self, terms: list[str], limit: int = 20) -> list[dict[str, Any]]:
+        """Facts still inside their shelf life that bear on these words.
+
+        Relevance is deliberately crude — a claim matching more of the topic's
+        words comes first — because the alternative is an embedding index, and
+        a registry that needs one has stopped being auditable.
+        """
+        wanted = [claim_key(t) for t in terms]
+        wanted = [t for t in wanted if len(t) >= 3]
+        if not wanted:
+            return []
+
+        clause = " OR ".join(["claim_key LIKE ?"] * len(wanted))
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"SELECT * FROM facts WHERE expires_at > ? AND ({clause})"
+                " ORDER BY tier DESC, verified DESC, verified_at DESC LIMIT 200",
+                (_now(), *[f"%{t}%" for t in wanted]),
+            ).fetchall()
+
+        scored = sorted(
+            (dict(row) for row in rows),
+            key=lambda row: (
+                -sum(1 for t in wanted if t in row["claim_key"]),
+                -int(row["tier"]),
+                -int(row["verified"]),
+            ),
+        )
+        return scored[:limit]
+
+    def mark_facts_used(self, claim_keys: list[str]) -> None:
+        if not claim_keys:
+            return
+        with self._connect() as conn:
+            conn.executemany(
+                "UPDATE facts SET times_used = times_used + 1 WHERE claim_key = ?",
+                [(key,) for key in claim_keys],
+            )
+
+    def fact_stats(self) -> dict[str, Any]:
+        """What the registry is holding, live and expired, by kind."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT kind, expires_at > ? AS live, COUNT(*) AS n, SUM(times_used)"
+                " AS used FROM facts GROUP BY kind, live",
+                (_now(),),
+            ).fetchall()
+        stats: dict[str, Any] = {"live": 0, "expired": 0, "reuses": 0, "by_kind": {}}
+        for row in rows:
+            bucket = "live" if row["live"] else "expired"
+            stats[bucket] += row["n"]
+            stats["reuses"] += row["used"] or 0
+            stats["by_kind"].setdefault(row["kind"], {"live": 0, "expired": 0})
+            stats["by_kind"][row["kind"]][bucket] += row["n"]
+        return stats
+
+    def recent_facts(self, limit: int = 30, live_only: bool = True) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM facts"
+                + (" WHERE expires_at > ?" if live_only else "")
+                + " ORDER BY verified_at DESC LIMIT ?",
+                ((_now(), limit) if live_only else (limit,)),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def forget_fact(self, fact_id: int) -> bool:
+        """Drop one remembered claim.
+
+        The escape hatch for a fact that was verified and is still wrong. A
+        registry a person cannot correct is one they stop trusting entirely.
+        """
+        with self._connect() as conn:
+            cur = conn.execute("DELETE FROM facts WHERE id = ?", (fact_id,))
+            return cur.rowcount > 0
 
     # --------------------------------------------------------------- reviews
 
