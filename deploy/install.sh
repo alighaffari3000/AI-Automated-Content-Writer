@@ -72,8 +72,16 @@ tar -C "$root" \
 chown -R "$SERVICE_USER:$SERVICE_USER" "$APP_DIR"
 
 echo "==> Building the environment (this is the slow step, once)"
-sudo -u "$SERVICE_USER" env \
-    HOME="$APP_DIR" UV_CACHE_DIR=/tmp/uv-cache \
+# runuser rather than sudo: it is part of util-linux, so it is on every server,
+# and sudo is not — a minimal image can be without it entirely.
+as_service_user() {
+    if command -v runuser >/dev/null 2>&1; then
+        runuser -u "$SERVICE_USER" -- "$@"
+    else
+        sudo -u "$SERVICE_USER" -- "$@"
+    fi
+}
+as_service_user env HOME="$APP_DIR" UV_CACHE_DIR=/tmp/uv-cache \
     "$UV" sync --frozen --project "$APP_DIR"
 
 echo "==> Preparing $DATA_DIR"
@@ -133,7 +141,7 @@ Next, and nothing will work until this is done:
   1. Fill in $ENV_DIR/env — at minimum GEMINI_API_KEY, SITE_API_URL and
      SITE_API_TOKEN.
   2. Check what the pipeline sees:
-       sudo -u $SERVICE_USER env HOME=$APP_DIR DB_PATH=$DATA_DIR/pipeline.db \\
+       runuser -u $SERVICE_USER -- env HOME=$APP_DIR DB_PATH=$DATA_DIR/pipeline.db \\
            $UV run --no-sync --project $APP_DIR python -m app.cli check
   3. Give it something to write about, with the same prefix:
        ... python -m app.cli categories seed
