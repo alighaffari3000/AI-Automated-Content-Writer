@@ -1,5 +1,8 @@
 # One article, once. The timer beside this file decides when.
 #
+# The image reference below is filled in by deploy/install.sh, so the image
+# this runs and the image that was pulled cannot drift apart.
+#
 # Installed by deploy/install.sh to /etc/systemd/system/. Run it by hand with
 #   sudo systemctl start content-writer.service
 # and read what happened with
@@ -31,7 +34,7 @@ ExecStart=/usr/bin/docker run --rm \
     -v /var/lib/content-writer:/code/data \
     -v /etc/content-writer/env:/code/.env:ro \
     --add-host=host.docker.internal:host-gateway \
-    ai-content-writer:latest
+    __IMAGE__
 
 # If the run is still going when systemd stops it, stop the container too,
 # rather than leaving it orphaned holding the database.

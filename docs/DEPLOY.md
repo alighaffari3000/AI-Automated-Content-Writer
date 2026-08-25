@@ -37,6 +37,28 @@ good internal link from a broken one, so it stops checking rather than guessing.
 - about 2 GB of disk for the image, and very little else — a run is a couple of
   minutes of one core
 
+## Where the image comes from
+
+It is built by GitHub Actions and published to
+`ghcr.io/alighaffari3000/ai-content-writer`. `docker build` is by far the
+heaviest thing that would ever happen on this server — heavier than a run —
+and there is no reason for it to happen there at all.
+
+Every push to `main` builds and publishes `:latest`, plus `:sha-<commit>` so any
+build can be pinned or rolled back to. To publish from a branch before merging
+it, run the `image` workflow from the Actions tab with **tag_as_latest** ticked.
+
+**One thing has to be done by hand, once:** a package published from a public
+repository is still private until you say otherwise. After the first successful
+build, open
+[the package settings](https://github.com/users/alighaffari3000/packages/container/ai-content-writer/settings)
+and change its visibility to Public. Then the server pulls with no credentials
+at all. (Leaving it private also works — the server then needs
+`docker login ghcr.io` with a token that has `read:packages`.)
+
+If the registry is unreachable, or you want to run a change that is not pushed
+yet, `sudo BUILD_LOCALLY=1 ./deploy/install.sh` builds on the machine instead.
+
 ## Install
 
 ```bash
@@ -45,7 +67,7 @@ cd AI-Automated-Content-Writer
 sudo ./deploy/install.sh
 ```
 
-That builds the image, creates `/var/lib/content-writer` for the database,
+That pulls the image, creates `/var/lib/content-writer` for the database,
 copies `.env.example` to `/etc/content-writer/env` — with `DRY_RUN=true`, so a
 fresh install cannot publish to a live site by accident — and enables two
 timers: one that writes an article every morning, one that backs up the
@@ -96,7 +118,8 @@ A shorthand for talking to the pipeline, worth putting in your shell profile:
 alias cw='sudo docker run --rm -it \
     -v /var/lib/content-writer:/code/data \
     -v /etc/content-writer/env:/code/.env:ro \
-    ai-content-writer:latest uv run --no-sync python -m app.cli'
+    ghcr.io/alighaffari3000/ai-content-writer:latest \
+    uv run --no-sync python -m app.cli'
 ```
 
 Then:
@@ -142,14 +165,26 @@ lost; the database stays.
 
 ## Updating
 
+Push to `main`, wait for the build, then on the server:
+
 ```bash
 cd AI-Automated-Content-Writer
 git pull
 sudo ./deploy/install.sh
 ```
 
-The database migrates itself on the next run: new columns and tables are added
-in place, and no existing row is dropped.
+`git pull` is for the unit files and this runbook; the code arrives in the
+image. The database migrates itself on the next run: new columns and tables are
+added in place, and no existing row is dropped.
+
+To go back to a build that worked:
+
+```bash
+sudo IMAGE=ghcr.io/alighaffari3000/ai-content-writer:sha-1a2b3c4 ./deploy/install.sh
+```
+
+That pins the unit to that image until the next plain `install.sh` puts it back
+on `latest`.
 
 ## Backups and restore
 
@@ -187,6 +222,8 @@ has the whole run.
 | Every fact ranks as "general web" | `SOURCE_MANUFACTURERS` is empty |
 | Permission denied writing the database | the volume is not owned by uid 10001 — `sudo chown -R 10001:10001 /var/lib/content-writer` |
 | A run stuck for hours | `docker rm -f content-writer`; the next run recovers the abandoned article by itself |
+| `docker pull` says denied or not found | the package is still private — see [Where the image comes from](#where-the-image-comes-from) |
+| `exec format error` | the image is for another architecture: check `uname -m` and rebuild with the matching `platforms` input |
 
 A run that dies halfway leaves nothing broken behind: the next one rolls back
 the abandoned article, gives the category its turn back, and un-logs the

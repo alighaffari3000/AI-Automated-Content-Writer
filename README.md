@@ -155,7 +155,8 @@ On a server, with Docker and a systemd timer:
 sudo ./deploy/install.sh
 ```
 
-That builds the image, puts the database somewhere it will survive a redeploy,
+The image is built by GitHub Actions and pulled from there, so the server never
+runs a build. The installer puts the database somewhere it will survive a redeploy,
 and enables two timers: one that writes an article every morning, one that backs
 the database up every night. [docs/DEPLOY.md](docs/DEPLOY.md) has the whole
 runbook — what the target site must provide first, what to fill in, how to make

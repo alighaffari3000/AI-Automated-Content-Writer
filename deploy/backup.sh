@@ -11,7 +11,7 @@
 set -eu
 
 DATA_DIR="${DATA_DIR:-/var/lib/content-writer}"
-IMAGE="${IMAGE:-ai-content-writer:latest}"
+IMAGE="${IMAGE:-__IMAGE__}"
 KEEP="${KEEP:-14}"
 
 if [ ! -f "$DATA_DIR/pipeline.db" ]; then
