@@ -10,8 +10,45 @@ import os
 from dataclasses import dataclass, field
 
 
+# The values `.env.example` ships with. The installer makes
+# `/etc/content-writer/env` by copying that file, so an unedited placeholder is
+# the normal way a fresh install goes wrong — and it is the quiet way, because
+# `https://example.com/api/automation` is a perfectly valid-looking URL. Treated
+# as unset, it shows up as `NOT SET` in `check` instead of as a configured site
+# the pipeline would file today's article with.
+PLACEHOLDERS = frozenset(
+    {
+        "your-api-key-here",
+        "Example Site",
+        "https://example.com/api/automation",
+        "generate-a-long-random-string",
+        "https://example.com",
+        "your industry, described in a phrase",
+        "who the article is for",
+    }
+)
+
+# Which of them survived, so `check` can name them rather than say "not set"
+# about a line the operator can plainly see has something on it.
+_unedited: set[str] = set()
+
+
 def _env(name: str, default: str = "") -> str:
-    return os.getenv(name, default).strip()
+    value = os.getenv(name, default).strip()
+    if value in PLACEHOLDERS:
+        _unedited.add(name)
+        return default.strip() if default not in PLACEHOLDERS else ""
+    return value
+
+
+def unedited_settings() -> tuple[str, ...]:
+    """Settings still holding the example file's placeholder value."""
+    names = set(_unedited)
+    # Read straight from the environment by the model client rather than
+    # through this module, so it is never in `_unedited` on its own.
+    if os.getenv("GEMINI_API_KEY", "").strip() in PLACEHOLDERS:
+        names.add("GEMINI_API_KEY")
+    return tuple(sorted(names))
 
 
 def _env_int(name: str, default: int) -> int:

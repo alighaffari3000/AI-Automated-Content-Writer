@@ -82,6 +82,14 @@ SITE_API_URL=https://yoursite.example/api/automation
 SITE_API_TOKEN=...
 ```
 
+The file arrives as a copy of the example, so every one of those lines already
+has something on it. The placeholders are not treated as configuration: a
+setting still reading `https://example.com/api/automation` or
+`your-api-key-here` counts as unset, `cw check` shows it as `NOT SET` and names
+it, and the pipeline will not file an article with a site nobody chose. If the
+site's API does not exist yet, leaving them as they came is fine — that is the
+same as leaving them empty.
+
 Worth setting before the first real run:
 
 | Setting | Why |
@@ -189,7 +197,8 @@ has the whole run.
 | What you see | What it usually is |
 |---|---|
 | `SITE_API_URL / SITE_API_TOKEN are required` | the environment file is not filled in, or the symlink at `/opt/content-writer/.env` is gone |
-| A 404 from the model | the region, not the model name: set `GOOGLE_CLOUD_LOCATION=global` |
+| `Still holding the example file's placeholder value` | `/etc/content-writer/env` is a copy of `.env.example` with those lines unedited |
+| A 404 from the model | on a `GEMINI_API_KEY`, a retired model name — check `MODEL_AUTHOR` and `MODEL_WORKER`. On Vertex (`GOOGLE_GENAI_USE_VERTEXAI=true`) it is usually the region instead: set `GOOGLE_CLOUD_LOCATION=global` |
 | `Research found no source solid enough to write from` | the run stopped on purpose; nothing was published |
 | Every fact ranks as "general web" | `SOURCE_MANUFACTURERS` is empty |
 | Permission denied writing the database | `sudo chown -R contentwriter:contentwriter /var/lib/content-writer` |

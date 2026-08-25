@@ -22,7 +22,7 @@ from google.genai import types
 
 from .agent import app as adk_app
 from .agent import agent_models, get_store
-from .config import settings
+from .config import settings, unedited_settings
 from .cost import RunCost, usage_from_event
 from .notify import build_notifier
 
@@ -176,6 +176,14 @@ def cmd_check(args: argparse.Namespace) -> int:
     print(f"{'images'.rjust(width)} : {settings.images.model if settings.images.enabled else 'off'}")
 
     problems = []
+    unedited = unedited_settings()
+    if unedited:
+        # Worth naming before anything else: every other complaint below is a
+        # consequence of this one, and the file looks filled in.
+        problems.append(
+            "Still holding the example file's placeholder value, so they count "
+            "as unset: " + ", ".join(unedited)
+        )
     if not site.configured:
         problems.append("SITE_API_URL / SITE_API_TOKEN are required to deliver drafts.")
     if not category:
