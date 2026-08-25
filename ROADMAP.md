@@ -89,10 +89,22 @@ Reuse is not a special case: a remembered fact arrives with a citable id of its
 own and passes the same audit as a fresh search. Expired rows stay, as phase
 3's signal that the article resting on them has gone stale.
 
-**A real evaluation suite.** Not pytest — model output is not deterministic and
-asserting on it produces flaky tests that teach nothing. An eval dataset with
-LLM-judge scoring, run against fixed inputs, is what turns "the reviewers seem
-generous" into a number that can be tracked across prompt changes.
+**A real evaluation suite. ✅ Shipped.** Nine scenarios of planted defects and
+a clean control, run against the real reviewer agents on fixed inputs, with
+`--repeat` because one pass of a non-deterministic model is a sample rather
+than a measurement. Three numbers come out, and the third is the one that was
+missing: *separation*, the gap between what a clean draft scores and what a
+defective one scores. Detection rate alone would have looked respectable on the
+board that scored everything 9.5 and found nothing. Runs are saved and each one
+reports what moved, which is what turns it into a regression test for prompts.
+
+One scenario measures the division of labour rather than a defect: a draft
+whose only flaw is a title too long to fit must be caught by the gate and left
+alone by the reviewers.
+
+What this does not do is grade articles. No fixed answer key settles whether an
+article is good, and pretending otherwise is how a suite ends up measuring
+nothing while producing a number every week.
 
 **The measurable half of SEO moves into the gate. ✅ Shipped.** `app/seo.py`
 measures; `rules.py` decides, beside the citation check. Title and description

@@ -251,7 +251,7 @@ def cmd_eval(args: argparse.Namespace) -> int:
     """Measure whether the reviewers still catch planted defects."""
     from . import evaluation
 
-    failures = evaluation.main()
+    failures = evaluation.main(repeat=args.repeat, keep=not args.no_save)
     return 1 if failures else 0
 
 
@@ -384,11 +384,22 @@ def main(argv: list[str] | None = None) -> int:
     pause.add_argument("--resume", action="store_true", help="put it back in rotation")
     pause.set_defaults(func=cmd_categories_pause)
 
-    sub.add_parser(
+    evaluate = sub.add_parser(
         "eval",
         help="check that the reviewers still catch planted defects",
         parents=[common],
-    ).set_defaults(func=cmd_eval)
+    )
+    evaluate.add_argument(
+        "--repeat",
+        type=int,
+        default=1,
+        help="run every scenario N times; model output varies, so a number "
+        "worth comparing needs more than one sample",
+    )
+    evaluate.add_argument(
+        "--no-save", action="store_true", help="do not keep this run for comparison"
+    )
+    evaluate.set_defaults(func=cmd_eval)
 
     cost = sub.add_parser("cost", help="what runs have been costing", parents=[common])
     cost.add_argument("--limit", type=int, default=30)

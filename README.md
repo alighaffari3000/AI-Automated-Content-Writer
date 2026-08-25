@@ -208,8 +208,22 @@ uv run pytest tests/ --ignore=tests/eval
 ```
 
 These cover code, not writing quality: the gate's verdicts and the graph's
-shape. Whether the agents write well is a question for evaluation
-(`tests/eval/`), which is not part of this first version.
+shape. No model is called, so they run in a second and can be trusted in CI.
+
+Whether the *reviewers* still catch anything is a different question, and it
+needs a model:
+
+```bash
+uv run python -m app.cli eval --repeat 5
+```
+
+That puts drafts with known defects in front of the real review board and
+reports three numbers — how many defects were caught, how often a clean draft
+was wrongly failed, and the gap between what a clean draft scores and what a
+defective one scores. The last one is the calibration number: a board that
+scores everything alike is applauding, not reviewing. Runs are saved and each
+one prints what moved since the last. See [tests/eval/](tests/eval/) for what
+the scenarios are and what the whole-pipeline dataset costs.
 
 ## Status
 

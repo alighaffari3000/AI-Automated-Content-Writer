@@ -10,8 +10,21 @@ settle. It hands the reviewers drafts with known defects planted in them and
 asks a narrower question with a right answer: *was the defect found, and was
 it rated as seriously as it deserves?*
 
-Run it after any change to the review prompts, the models or the gate. A
-detection rate that drops is a regression, whatever the article looks like.
+Three numbers come out of it, and the third is the one that was missing:
+
+  detection rate    how many planted defects were caught.
+  controls clean    how often a sound draft was called unpublishable — a
+                    reviewer that cries wolf is as useless as one that sleeps.
+  separation        the gap between what a clean draft scores and what a
+                    defective one scores. This is the calibration number. A
+                    board that scores everything 9 has a detection rate that
+                    looks fine and a separation of nothing, and it is not
+                    reviewing, it is applauding.
+
+Model output varies, so one pass is a sample rather than a measurement: use
+`--repeat` when a number is going to be compared against another number. Every
+run is saved, and the next one prints the difference — which is what makes this
+a regression test for prompts rather than a thing to look at once.
 """
 
 from __future__ import annotations
@@ -20,6 +33,7 @@ import asyncio
 import json
 import logging
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -54,6 +68,11 @@ class Scenario:
     expect_min_severity: str = "major"
     # A clean control: nothing planted, and flagging it critical is the failure.
     is_control: bool = False
+    # A defect the gate measures rather than the reviewers judge. Passing means
+    # the gate caught it *and* no reviewer spent a critical on it: since the
+    # measurements moved into code, a reviewer arguing about title length is
+    # a reviewer not doing the job only it can do.
+    carried_by_gate: bool = False
 
 
 @dataclass
@@ -166,15 +185,36 @@ async def run_scenario(scenario: Scenario, cost: RunCost) -> ScenarioResult:
     ]
     scores = {r.reviewer: r.score for r in reviews}
 
-    if scenario.is_control:
+    criticals = [
+        r.reviewer for r in reviews if any(i.severity == "critical" for i in r.issues)
+    ]
+
+    if scenario.carried_by_gate:
+        verdict_ok = decision.verdict == scenario.expect_verdict
+        passed = verdict_ok and not criticals
+        reason = (
+            "carried by the gate"
+            if passed
+            else "; ".join(
+                filter(
+                    None,
+                    [
+                        f"gate said {decision.verdict}, expected {scenario.expect_verdict}"
+                        if not verdict_ok
+                        else "",
+                        f"{criticals} spent a critical on something already measured"
+                        if criticals
+                        else "",
+                    ],
+                )
+            )
+        )
+    elif scenario.is_control:
         # A clean draft must not be savaged. Wanting improvements is fine;
         # calling it unpublishable is a false positive, and a reviewer that
         # cries wolf is as useless as one that sleeps.
-        critical = [
-            r.reviewer for r in reviews if any(i.severity == "critical" for i in r.issues)
-        ]
-        passed = not critical
-        reason = "clean draft passed" if passed else f"false critical from {critical}"
+        passed = not criticals
+        reason = "clean draft passed" if passed else f"false critical from {criticals}"
     else:
         expected = set(scenario.expect_reviewers)
         found = expected.intersection(caught)
@@ -208,48 +248,190 @@ async def run_scenario(scenario: Scenario, cost: RunCost) -> ScenarioResult:
     )
 
 
-async def run_all(scenarios: list[Scenario]) -> tuple[list[ScenarioResult], RunCost]:
+async def run_all(
+    scenarios: list[Scenario], repeat: int = 1
+) -> tuple[list[ScenarioResult], RunCost]:
     cost = RunCost()
     results = []
-    for scenario in scenarios:
-        logger.info("scenario %s — %s", scenario.id, scenario.description)
-        results.append(await run_scenario(scenario, cost))
+    for attempt in range(1, repeat + 1):
+        for scenario in scenarios:
+            logger.info(
+                "scenario %s (attempt %s/%s) — %s",
+                scenario.id,
+                attempt,
+                repeat,
+                scenario.description,
+            )
+            results.append(await run_scenario(scenario, cost))
     return results, cost
 
 
-def report(results: list[ScenarioResult], cost: RunCost) -> int:
-    """Print the scorecard. Returns the number of failures."""
+# ------------------------------------------------------------------ scoring
+
+
+def mean(values: list[float]) -> float:
+    return round(sum(values) / len(values), 2) if values else 0.0
+
+
+def summarise(results: list[ScenarioResult], cost: RunCost) -> dict[str, Any]:
+    """The whole run as numbers, in the shape the next run will compare against."""
     planted = [r for r in results if not r.scenario.is_control]
     controls = [r for r in results if r.scenario.is_control]
-    failures = [r for r in results if not r.passed]
+    planted_scores = [s for r in planted for s in r.scores.values()]
+    control_scores = [s for r in controls for s in r.scores.values()]
 
-    print()
+    by_scenario: dict[str, Any] = {}
     for result in results:
-        mark = "PASS" if result.passed else "FAIL"
-        kind = "control" if result.scenario.is_control else "planted"
-        scores = " ".join(f"{k.split('_')[0]}={v}" for k, v in sorted(result.scores.items()))
-        print(f"[{mark}] {result.scenario.id} ({kind}) — {result.scenario.description}")
-        print(f"       gate={result.verdict}  {scores}")
+        entry = by_scenario.setdefault(
+            result.scenario.id,
+            {
+                "description": result.scenario.description,
+                "control": result.scenario.is_control,
+                "attempts": 0,
+                "passes": 0,
+                "scores": [],
+                "verdicts": [],
+                "reasons": [],
+            },
+        )
+        entry["attempts"] += 1
+        entry["passes"] += int(result.passed)
+        entry["scores"].extend(result.scores.values())
+        entry["verdicts"].append(result.verdict)
         if not result.passed:
-            print(f"       ↳ {result.reason}")
+            entry["reasons"].append(result.reason)
+    for entry in by_scenario.values():
+        entry["mean_score"] = mean(entry.pop("scores"))
 
-    caught = sum(1 for r in planted if r.passed)
-    print()
-    print(f"defects caught : {caught}/{len(planted)}")
-    if controls:
-        clean = sum(1 for r in controls if r.passed)
-        print(f"controls clean : {clean}/{len(controls)}")
-    all_scores = [s for r in results for s in r.scores.values()]
-    if all_scores:
-        print(f"mean score     : {sum(all_scores) / len(all_scores):.2f}")
-    print(
-        f"cost           : {cost.total_input + cost.total_output:,} tokens, "
-        f"~${cost.estimate_usd(settings.cost.rates, settings.cost.image_usd):.3f}"
+    return {
+        "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "models": {
+            "worker": settings.models.worker,
+            "author": settings.models.author,
+        },
+        "detection_rate": (
+            round(sum(1 for r in planted if r.passed) / len(planted), 3)
+            if planted
+            else 0.0
+        ),
+        "controls_clean": (
+            round(sum(1 for r in controls if r.passed) / len(controls), 3)
+            if controls
+            else 0.0
+        ),
+        "mean_planted_score": mean(planted_scores),
+        "mean_control_score": mean(control_scores),
+        # What a clean draft earns over a defective one. The calibration
+        # number: near zero means the board is not discriminating, however
+        # many defects it technically flagged.
+        "separation": round(mean(control_scores) - mean(planted_scores), 2),
+        "tokens": cost.total_input + cost.total_output,
+        "usd": round(
+            cost.estimate_usd(settings.cost.rates, settings.cost.image_usd), 4
+        ),
+        "scenarios": by_scenario,
+    }
+
+
+def results_dir() -> Path:
+    return Path(settings.db_path).resolve().parent / "eval"
+
+
+def save(summary: dict[str, Any]) -> Path:
+    """Keep every run. Two numbers are a trend; one is an anecdote."""
+    directory = results_dir()
+    directory.mkdir(parents=True, exist_ok=True)
+    stamp = summary["at"].replace(":", "").replace("-", "")
+    path = directory / f"eval-{stamp}.json"
+    path.write_text(
+        json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8"
     )
-    return len(failures)
+    return path
 
 
-def main() -> int:
+def previous(before: Path | None = None) -> dict[str, Any] | None:
+    """The last saved run, for comparison."""
+    directory = results_dir()
+    if not directory.exists():
+        return None
+    files = sorted(p for p in directory.glob("eval-*.json") if p != before)
+    for path in reversed(files):
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+    return None
+
+
+def compare(summary: dict[str, Any], earlier: dict[str, Any]) -> list[str]:
+    """What moved since the run before, and in which direction."""
+    lines = []
+    for key, label, digits in (
+        ("detection_rate", "defects caught", 3),
+        ("controls_clean", "controls clean", 3),
+        ("separation", "separation", 2),
+        ("mean_planted_score", "mean score, planted", 2),
+        ("mean_control_score", "mean score, control", 2),
+    ):
+        was, now = earlier.get(key), summary.get(key)
+        if was is None or now is None or round(was - now, 4) == 0:
+            continue
+        arrow = "▲" if now > was else "▼"
+        lines.append(f"  {arrow} {label}: {was:.{digits}f} → {now:.{digits}f}")
+
+    for name, entry in summary["scenarios"].items():
+        old = (earlier.get("scenarios") or {}).get(name)
+        if not old:
+            lines.append(f"  + {name}: new scenario")
+            continue
+        was = old["passes"] / max(old["attempts"], 1)
+        now = entry["passes"] / max(entry["attempts"], 1)
+        if round(was - now, 3) != 0:
+            lines.append(f"  · {name}: {was:.0%} → {now:.0%} of attempts passed")
+    return lines
+
+
+def report(results: list[ScenarioResult], summary: dict[str, Any]) -> int:
+    """Print the scorecard. Returns the number of scenarios that did not hold."""
+    print()
+    for name, entry in summary["scenarios"].items():
+        held = entry["passes"] == entry["attempts"]
+        mark = "PASS" if held else "FAIL"
+        kind = "control" if entry["control"] else "planted"
+        rate = (
+            "" if entry["attempts"] == 1 else f" ({entry['passes']}/{entry['attempts']})"
+        )
+        print(f"[{mark}]{rate} {name} ({kind}) — {entry['description']}")
+        print(f"       mean score {entry['mean_score']}, gate {'/'.join(dict.fromkeys(entry['verdicts']))}")
+        for reason in dict.fromkeys(entry["reasons"]):
+            print(f"       ↳ {reason}")
+
+    print()
+    print(f"defects caught : {summary['detection_rate']:.0%}")
+    print(f"controls clean : {summary['controls_clean']:.0%}")
+    print(
+        f"separation     : {summary['separation']:+.2f} "
+        f"(control {summary['mean_control_score']} vs planted "
+        f"{summary['mean_planted_score']})"
+    )
+    print(f"cost           : {summary['tokens']:,} tokens, ~${summary['usd']:.3f}")
+    return sum(
+        1 for e in summary["scenarios"].values() if e["passes"] != e["attempts"]
+    )
+
+
+def main(repeat: int = 1, keep: bool = True) -> int:
     scenarios = load_scenarios()
-    results, cost = asyncio.run(run_all(scenarios))
-    return report(results, cost)
+    results, cost = asyncio.run(run_all(scenarios, repeat=repeat))
+    summary = summarise(results, cost)
+    failures = report(results, summary)
+
+    earlier = previous()
+    if keep:
+        path = save(summary)
+        print(f"saved          : {path}")
+    if earlier:
+        changes = compare(summary, earlier)
+        print(f"\nsince {earlier['at']}:")
+        print("\n".join(changes) if changes else "  nothing moved")
+    return failures

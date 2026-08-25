@@ -2,6 +2,11 @@
 
 This directory contains evaluation datasets for testing agent behavior.
 
+**Read [../README.md](../README.md) first.** For this project, a dataset case
+runs the whole daily pipeline — it writes and files an article. The cheap,
+repeatable instrument is `python -m app.cli eval`, and every command below
+should be run with `DRY_RUN=true` unless you mean to publish.
+
 ## Running Evaluations
 
 ### Default Dataset
