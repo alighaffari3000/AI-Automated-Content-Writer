@@ -320,6 +320,51 @@ def test_a_fact_the_draft_never_used_does_not_hold_it_back():
     assert decision.verdict == "APPROVE"
 
 
+def test_a_term_hiding_inside_a_longer_word_does_not_escalate():
+    """SAFETY_TERMS has "vat"-shaped members; "innovative" must not trip them.
+    A safety headline that cries wolf is one the reader learns to skip."""
+    draft = ArticleDraft(
+        title="Innovative approaches",
+        slug="innovative-approaches",
+        excerpt="An excerpt.",
+        body="Innovative solutions for private homes.",
+        used_fact_ids=["FACT-001"],
+    )
+    decision = gate(
+        draft,
+        priced_bundle(kind="general"),
+        safety=SafetyConfig(enabled=True, terms=("vat",), fact_kinds=("price",)),
+    )
+    assert decision.verdict == "APPROVE"
+
+
+def test_a_suffixed_form_of_a_term_still_escalates():
+    """The ZWNJ-suffixed plural is still about subsidies; the ZWNJ is a word break."""
+    draft = ArticleDraft(
+        title="یارانه‌های انرژی",  # noqa: RUF001
+        slug="energy-subsidies",
+        excerpt="یک خلاصه.",
+        body="بررسی یارانه‌ها در سال جاری.",  # noqa: RUF001
+        used_fact_ids=["FACT-001"],
+    )
+    decision = gate(draft, priced_bundle(kind="general"))
+    assert decision.verdict == "ESCALATE"
+
+
+def test_the_safety_reason_survives_the_no_reviews_path():
+    """Reviewers all failing is exactly when the warning matters most."""
+    decision = evaluate_reviews(
+        draft=make_draft("FACT-001"),
+        bundle=priced_bundle(),
+        reviews=[],
+        round_number=1,
+        config=CONFIG,
+        safety=SAFETY,
+    )
+    assert decision.verdict == "ESCALATE"
+    assert decision.requires_human
+
+
 def test_the_safety_gate_can_be_turned_off():
     decision = gate(
         make_draft("FACT-001"), priced_bundle(), safety=SafetyConfig(enabled=False)

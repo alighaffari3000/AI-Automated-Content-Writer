@@ -167,42 +167,83 @@ def test_reuse_is_counted(store):
     assert store.fact_stats()["reuses"] == 2
 
 
-def test_reuse_does_not_push_the_expiry_date_forward(store, monkeypatch):
-    """Otherwise a fact reused daily would never expire, and a shelf life that
-    renews itself on use is no shelf life at all."""
+def reuse_run(store, monkeypatch, claim: str, source_ids: list[str], reworded: str = ""):
+    """One pipeline `remember()` pass over a fact that cites the registry."""
     from types import SimpleNamespace
 
     from app import agent
     from app.schemas import Fact, ResearchBundle
     from app.sources import SourceIndex
 
-    claim = "LFP batteries tolerate 80 percent depth of discharge"
-    remember(store, fact(claim))
-    expires = store.recent_facts()[0]["expires_at"]
-
     monkeypatch.setattr(agent, "_store", store)
     index = SourceIndex()
     index.add_known("reg-1", "https://deye.com/spec", tier=3)
+    index.add(url="https://fresh.example/page", domain="fresh.example")
     bundle = ResearchBundle(
         angle="an angle",
         outline=["one"],
         facts=[
             Fact(
                 fact_id="FACT-001",
-                claim=claim,
+                claim=reworded or claim,
                 source="Deye datasheet",
-                source_ids=["reg-1"],
+                source_ids=source_ids,
                 evidence="the passage",
                 confidence="HIGH",
                 kind="specification",
             )
         ],
     )
-    agent.remember(bundle, index, SimpleNamespace(state={"article_id": 2}))
+    state = {
+        "article_id": 2,
+        "known_facts": [{"reg_id": "reg-1", "claim_key": claim_key(claim)}],
+    }
+    agent.remember(bundle, index, SimpleNamespace(state=state))
+
+
+def test_reuse_does_not_push_the_expiry_date_forward(store, monkeypatch):
+    """Otherwise a fact reused daily would never expire, and a shelf life that
+    renews itself on use is no shelf life at all."""
+    claim = "LFP batteries tolerate 80 percent depth of discharge"
+    remember(store, fact(claim))
+    expires = store.recent_facts()[0]["expires_at"]
+
+    reuse_run(store, monkeypatch, claim, ["reg-1"])
 
     row = store.recent_facts()[0]
     assert row["expires_at"] == expires, "the shelf life is not renewed by reuse"
     assert row["times_used"] == 1, "but the reuse is counted"
+
+
+def test_a_fresh_source_riding_along_does_not_renew_the_shelf_life_either(
+    store, monkeypatch
+):
+    """The audit trusts registry sources unread, so `verified` on a mixed
+    citation proves nothing about the fresh source — renewing on it would be
+    the same no-shelf-life failure through a side door."""
+    claim = "LFP batteries tolerate 80 percent depth of discharge"
+    remember(store, fact(claim))
+    expires = store.recent_facts()[0]["expires_at"]
+
+    reuse_run(store, monkeypatch, claim, ["reg-1", "src-1"])
+
+    assert store.recent_facts()[0]["expires_at"] == expires
+
+
+def test_a_reworded_reuse_is_still_counted_against_the_stored_row(store, monkeypatch):
+    """The count is keyed by the registry's own claim_key, not today's wording."""
+    claim = "LFP batteries tolerate 80 percent depth of discharge"
+    remember(store, fact(claim))
+
+    reuse_run(
+        store,
+        monkeypatch,
+        claim,
+        ["reg-1"],
+        reworded="LFP batteries can be discharged to 80 percent of capacity",
+    )
+
+    assert store.recent_facts()[0]["times_used"] == 1
 
 
 def test_a_wrong_fact_can_be_forgotten(store):

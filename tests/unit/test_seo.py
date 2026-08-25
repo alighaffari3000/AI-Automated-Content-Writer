@@ -221,6 +221,18 @@ def test_an_opening_that_never_names_the_subject_is_reported():
     assert opening and opening[0].severity == "minor"
 
 
+def test_a_keyword_is_recognised_across_zwnj_and_letter_variants():
+    """The same Persian word arrives with a ZWNJ one day and a space the next.
+    A gate that misses that keeps sending back a draft over a difference no
+    reader can see."""
+    persian = draft(
+        title="ذخیره سازی انرژی در خانه",  # plain space
+        seo_title="راهنمای ذخیره سازی انرژی برای خانه",
+    )
+    found = defects(persian, INDEX, ["ذخیره‌سازی انرژی"], CONFIG)  # ZWNJ
+    assert not [i for i in found if i.issue_id == "SEO-KEYWORD-TITLE"]
+
+
 def test_a_keyword_in_another_script_is_not_demanded_of_the_title():
     """The one check that would otherwise force English into a Persian title."""
     persian = draft(

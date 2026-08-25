@@ -161,7 +161,12 @@ def load_run_context(ctx: Context, node_input: Any) -> Event:
     taxonomy = site.taxonomy()
     recent = store.recent_titles()
     covered = store.topics_in_category(category["id"])
-    orphans = store.unlinked(seo.slugs_from(articles))
+    # slugs_from may hand back full URLs where the site sent permalinks;
+    # unlinked() compares against "/slug" in bodies, so reduce each to the
+    # bare slug the way SiteIndex does, or every linked page reads as orphaned.
+    orphans = store.unlinked(
+        [seo.slug_of(s) or s.lower() for s in seo.slugs_from(articles)]
+    )
 
     logger.info(
         "Run started: category=%r (%s article(s) so far) products=%s published=%s",
@@ -503,11 +508,15 @@ def remember(bundle: ResearchBundle, index: SourceIndex, ctx: Context) -> None:
     rows = []
     for fact in bundle.allowed_facts:
         cited = [s for s in (index.get(sid) for sid in fact.source_ids) if s]
-        # A fact that rests only on the registry's own sources was reused, not
-        # re-verified. Storing it again would push its expiry date forward
-        # every time it was reused — which is how a shelf life quietly becomes
-        # no shelf life at all, and a stale price outlives the year it was true.
-        if cited and all(s.from_registry for s in cited):
+        # A fact citing the registry at all was reused, not re-verified — even
+        # when a fresh source rides along, because the audit trusts registry
+        # sources unread, so `verified` proves nothing about the fresh one.
+        # Storing it again would push the expiry date forward on every reuse,
+        # which is how a shelf life quietly becomes no shelf life at all and a
+        # stale price outlives the year it was true. Re-verification happens
+        # the honest way: the shelf life runs out, the registry stops offering
+        # the fact, and the researcher meets the claim as new evidence again.
+        if any(s.from_registry for s in cited):
             continue
         best = max(cited, key=lambda s: s.tier) if cited else None
         rows.append(
@@ -521,11 +530,19 @@ def remember(bundle: ResearchBundle, index: SourceIndex, ctx: Context) -> None:
     stored = store.remember_facts(article_id, rows, settings.registry.shelf_life)
 
     # Count a reuse where one actually happened: a fact that cited the
-    # registry's own id rather than a source found this morning.
+    # registry's own id. The count is keyed by the *stored* claim_key, carried
+    # in known_facts — keying by today's wording would lose the count whenever
+    # the model reworded the claim, and the reuse number is what this whole
+    # feature is justified by.
+    stored_keys = {
+        str(k.get("reg_id")): str(k.get("claim_key") or "")
+        for k in ctx.state.get("known_facts") or []
+    }
     reused = {
-        claim_key(fact.claim)
+        key
         for fact in bundle.allowed_facts
-        if any(sid.startswith("reg-") for sid in fact.source_ids)
+        for sid in fact.source_ids
+        if (key := stored_keys.get(sid))
     }
     store.mark_facts_used(sorted(reused))
     if stored or reused:

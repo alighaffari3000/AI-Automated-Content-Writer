@@ -75,30 +75,6 @@ def shingles(words: list[str], size: int = 5) -> set[str]:
     return {" ".join(words[i : i + size]) for i in range(len(words) - size + 1)}
 
 
-def overlap(passage: str, haystack: str, size: int = 5) -> float:
-    """What fraction of the passage's word-runs appear in the larger text."""
-    wanted = shingles(tokens(passage), size)
-    if not wanted:
-        return 0.0
-    found = shingles(tokens(haystack), size)
-    return len(wanted & found) / len(wanted)
-
-
-def word_coverage(passage: str, haystack: str) -> float:
-    """What fraction of the passage's words appear in the larger text at all.
-
-    Word runs catch quotation; this catches the same sentence rebuilt in a
-    different order, which is what a careful writer produces when asked for a
-    passage and working from a page they have already read. On its own it
-    proves little — vocabulary repeats — which is why the caller pairs it with
-    the numbers, where agreement is not a coincidence.
-    """
-    wanted = set(tokens(passage))
-    if not wanted:
-        return 0.0
-    return len(wanted & set(tokens(haystack))) / len(wanted)
-
-
 NUMBER = re.compile(r"\d[\d.,]*\d|\d")
 
 

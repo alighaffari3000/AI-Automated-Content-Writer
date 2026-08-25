@@ -75,6 +75,23 @@ def test_a_page_nothing_links_to_is_offered_to_the_writer(store):
     assert store.unlinked(["linked-to", "nobody-links-here"]) == ["nobody-links-here"]
 
 
+def test_a_slug_that_prefixes_a_linked_one_is_still_an_orphan(store):
+    """A link to /inverter-sizing-guide is not a link to /inverter."""
+    article = store.start_article(None)
+    store.finish_article(
+        article,
+        draft={
+            "title": "One",
+            "slug": "one",
+            "body": "See [the guide](/inverter-sizing-guide).",
+        },
+        status="draft_sent",
+        verdict="APPROVE",
+        rounds=1,
+    )
+    assert store.unlinked(["inverter", "inverter-sizing-guide"]) == ["inverter"]
+
+
 def test_with_nothing_written_yet_everything_looks_unlinked(store):
     assert store.unlinked(["a", "b"]) == ["a", "b"]
 

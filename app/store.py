@@ -16,6 +16,7 @@ column is the audit trail of what a particular article actually rested on.
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -417,7 +418,14 @@ class Store:
                 )
             ]
         haystack = "\n".join(bodies)
-        return [slug for slug in wanted if f"/{slug}" not in haystack][:limit]
+        # The slug must end where the link does: a link to /inverter-sizing
+        # is not a link to /inverter, and plain substring search would hide
+        # exactly the orphan whose name is a prefix of a busier page's.
+        return [
+            slug
+            for slug in wanted
+            if not re.search(f"/{re.escape(slug)}(?![a-z0-9-])", haystack)
+        ][:limit]
 
     def recent_titles(self, limit: int = 40) -> list[str]:
         """Titles already written, so the planner does not repeat itself."""

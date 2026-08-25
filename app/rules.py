@@ -70,9 +70,19 @@ def must_reach_a_person(
         )
 
     if config.terms:
-        haystack = normalize_text(f"{draft.title} {draft.excerpt} {draft.body}")
+        # Matched on word boundaries, not raw substrings: a short term hiding
+        # inside a longer unrelated word would otherwise escalate articles at
+        # random, and a safety headline that cries wolf is one the person
+        # reading it learns to skip. Normalisation turns punctuation and ZWNJ
+        # into spaces, so padding with spaces is a real word boundary — and a
+        # ZWNJ-suffixed plural still matches its term.
+        haystack = f" {normalize_text(f'{draft.title} {draft.excerpt} {draft.body}')} "
         found = sorted(
-            {t for t in config.terms if normalize_text(t) and normalize_text(t) in haystack}
+            {
+                t
+                for t in config.terms
+                if normalize_text(t) and f" {normalize_text(t)} " in haystack
+            }
         )
         if found:
             reasons.append("it touches " + ", ".join(found))
@@ -117,6 +127,7 @@ def evaluate_reviews(
             reason="No reviews were produced; refusing to pass the draft through.",
             round_number=round_number,
             measured_issues=measured,
+            requires_human=escalate_to_human,
         )
 
     blocking: list[str] = []

@@ -23,6 +23,7 @@ from urllib.parse import urlsplit
 
 from .config import SeoConfig
 from .images import IMAGE_MARKER
+from .normalize import normalize_text
 from .schemas import ArticleDraft, ReviewIssue, Severity
 
 # A heading line, with the closing hashes some writers add stripped off.
@@ -526,9 +527,13 @@ def _keyword_defects(
     if not checkable:
         return []
 
+    # Compared in normalised form, not casefolded strings: the same Persian
+    # word arrives with a ZWNJ one day and a space the next, or with the Arabic
+    # yeh where the keyword has the Farsi one. A gate that misses those would
+    # keep sending back a draft over a difference no reader can see.
     found: list[ReviewIssue] = []
-    haystack = title.casefold()
-    if not any(k.casefold() in haystack for k in checkable):
+    haystack = normalize_text(title)
+    if not any(normalize_text(k) in haystack for k in checkable):
         found.append(
             _issue(
                 "SEO-KEYWORD-TITLE",
@@ -541,8 +546,8 @@ def _keyword_defects(
             )
         )
 
-    opening = opening_text(draft.body).casefold()
-    if opening and not any(k.casefold() in opening for k in checkable):
+    opening = normalize_text(opening_text(draft.body))
+    if opening and not any(normalize_text(k) in opening for k in checkable):
         found.append(
             _issue(
                 "SEO-KEYWORD-OPENING",

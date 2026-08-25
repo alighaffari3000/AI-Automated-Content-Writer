@@ -34,7 +34,7 @@ from urllib.parse import urlparse
 import httpx
 
 from .config import SourceConfig
-from .normalize import normalize_text, numbers_in, overlap, word_coverage
+from .normalize import normalize_text, numbers_in, shingles, tokens
 
 logger = logging.getLogger(__name__)
 
@@ -113,6 +113,10 @@ class Source:
     # A source carried over from the registry, whose passage was checked when
     # the fact was first verified and whose shelf life has not run out.
     from_registry: bool = False
+    # Cached by page_analysis(); never serialised.
+    _analysis: tuple[str, set[str], set[str], set[str]] | None = field(
+        default=None, repr=False, compare=False
+    )
 
     def as_prompt_line(self) -> str:
         state = {True: "reachable", False: "unreachable", None: "unchecked"}[self.reachable]
@@ -130,6 +134,19 @@ class Source:
 
     def older_than(self, days: int) -> bool:
         return bool(days) and self.age_days is not None and self.age_days > days
+
+    def page_analysis(self) -> tuple[str, set[str], set[str], set[str]]:
+        """The page as the passage check reads it, computed once.
+
+        Normalised text, its word set, its word runs and its numbers. Cached
+        because every fact citing this source asks the same four questions of
+        the same megabyte of text.
+        """
+        if self._analysis is None:
+            norm = normalize_text(self.text)
+            words = norm.split()
+            self._analysis = (norm, set(words), shingles(words), numbers_in(self.text))
+        return self._analysis
 
 
 @dataclass
@@ -485,18 +502,27 @@ def passage_state(evidence: str, source: Source) -> str:
     if not evidence.strip() or not source.readable:
         return "unchecked"
 
-    haystack = source.text
-    if normalize_text(evidence) in normalize_text(haystack):
+    # The page's side of the comparison is computed once per source, however
+    # many facts cite it: normalising and shingling a megabyte of text is real
+    # CPU, and twenty facts on the same datasheet would repeat it twenty times.
+    norm_page, page_words, page_shingles, page_numbers = source.page_analysis()
+
+    words = tokens(evidence)
+    if normalize_text(evidence) in norm_page:
         return "quoted"
-    if overlap(evidence, haystack) >= QUOTED:
+    wanted_shingles = shingles(words)
+    if wanted_shingles and (
+        len(wanted_shingles & page_shingles) / len(wanted_shingles) >= QUOTED
+    ):
         return "quoted"
 
     # Numbers decide the close calls. Vocabulary repeats across a subject and
     # proves little by itself, but a page carrying every figure the passage
     # states as well as most of its words is the page the passage came from.
     wanted = numbers_in(evidence)
-    figures_present = not wanted or wanted <= numbers_in(haystack)
-    if figures_present and word_coverage(evidence, haystack) >= PARAPHRASED:
+    figures_present = not wanted or wanted <= page_numbers
+    coverage = len(set(words) & page_words) / len(set(words)) if words else 0.0
+    if figures_present and coverage >= PARAPHRASED:
         return "paraphrased"
     return "absent"
 
