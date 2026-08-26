@@ -80,8 +80,12 @@ def _env_tuple(name: str) -> tuple[str, ...]:
 class Models:
     """Model per role. Reviewers run every day, so they use the cheap tier."""
 
-    worker: str = field(default_factory=lambda: _env("MODEL_WORKER", "gemini-3.7-flash"))
-    author: str = field(default_factory=lambda: _env("MODEL_AUTHOR", "gemini-pro-latest"))
+    worker: str = field(
+        default_factory=lambda: _env("MODEL_WORKER", "gemini-3.5-flash-lite")
+    )
+    author: str = field(
+        default_factory=lambda: _env("MODEL_AUTHOR", "gemini-3.6-flash")
+    )
 
 
 @dataclass(frozen=True)
@@ -275,6 +279,18 @@ class SeoConfig:
         default_factory=lambda: _env_int("SEO_DESCRIPTION_MIN", 110)
     )
     alt_min: int = field(default_factory=lambda: _env_int("SEO_ALT_MIN", 10))
+    # How far past a length a draft may be before the gate sends it back.
+    #
+    # The lengths above are what a search result actually shows, so they stay
+    # what the writer is told to aim for. This answers a narrower question: is
+    # being a few characters over worth rewriting a twelve-hundred-word
+    # article? It is not. Inside the tolerance the defect is still measured and
+    # still reported — it travels with the draft as a minor issue for the
+    # person reviewing it — it just does not cost another round. Set it to 0
+    # for the exact bar.
+    length_tolerance: int = field(
+        default_factory=lambda: _env_int("SEO_LENGTH_TOLERANCE", 10)
+    )
     # Pages that exist but are not articles, products or categories — an about
     # page, a contact form. Without them a perfectly good link looks broken.
     known_paths: tuple[str, ...] = field(
@@ -388,9 +404,24 @@ def _parse_rates(raw: str) -> dict[str, tuple[float, float]]:
     return rates
 
 
-# Published rates change; these are a starting point, not a promise. Override
-# with MODEL_RATES rather than editing them here.
-DEFAULT_RATES = "gemini-3.7-flash:0.30:2.50,gemini-3.5-flash:0.30:2.50,gemini-pro-latest:1.25:10.00,gemini-3:1.25:10.00"
+# Published rates change; these are a starting point, not a promise, and a
+# wrong one here is worse than no number at all -- it reads as a measurement.
+# Override with MODEL_RATES rather than editing them here.
+#
+# Checked against ai.google.dev/gemini-api/docs/pricing on 2026-08-26. Two
+# things to know about that page: 0.30/2.50 is the *lite* rate, not the flash
+# rate, which is what this table used to claim for both; and gemini-3.7-flash
+# the 3.6 and 3.7 flash tiers are on introductory pricing that doubles on
+# 2027-01-01.
+DEFAULT_RATES = (
+    "gemini-3.5-flash-lite:0.30:2.50,"
+    "gemini-3.1-flash-lite:0.30:2.50,"
+    "gemini-flash-lite-latest:0.30:2.50,"
+    "gemini-3.6-flash:0.75:3.75,"
+    "gemini-3.7-flash:0.75:3.75,"
+    "gemini-3.5-flash:1.50:9.00,"
+    "gemini-pro-latest:1.25:10.00"
+)
 
 
 @dataclass(frozen=True)

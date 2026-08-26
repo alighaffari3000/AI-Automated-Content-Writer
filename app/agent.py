@@ -77,7 +77,7 @@ def agent_models() -> dict[str, str]:
     return {
         "topic_planner": worker,
         "researcher": worker,
-        "fact_builder": worker,
+        "fact_builder": author,
         "writer": author,
         "judge": author,
         **{name: worker for name in REVIEWER_NODES},
@@ -635,25 +635,29 @@ def evaluate_gate(ctx: Context, node_input: dict[str, Any]) -> Event:
     )
 
 
-def illustrate(draft: ArticleDraft) -> tuple[str, str, int]:
+def illustrate(draft: ArticleDraft) -> tuple[str, str, int, float | None]:
     """Make the article's pictures and put them where they belong.
 
     Runs once, after the gate has approved — never during a revision round,
     where every picture would be paid for and then thrown away.
 
-    Returns the body with images in place, the lead image's URL, and how many
-    pictures were actually generated — the last one so the run can be costed,
-    since these calls do not pass through the runner. All of it degrades
-    quietly: a failed picture leaves an article with one fewer, which is a far
-    better outcome than no article.
+    Returns the body with images in place, the lead image's URL, how many
+    pictures were generated, and what the provider said they cost where it
+    said at all. The last two exist so the run can be costed, since these
+    calls do not pass through the runner. All of it degrades quietly: a failed
+    picture leaves an article with one fewer, which is a far better outcome
+    than no article.
     """
     if not settings.images.enabled:
-        return replace_markers(draft.body, []), "", 0
+        return replace_markers(draft.body, []), "", 0, None
 
     site = get_site()
     generator = ImageGenerator(settings.images)
     stem = draft.slug or "article"
     generated = 0
+    # None until a provider reports one, so "nobody said" stays distinct from
+    # "it was free" and the estimate is used for the pictures nobody priced.
+    billed: float | None = None
 
     featured_url = ""
     if draft.featured_image_prompt:
@@ -662,6 +666,8 @@ def illustrate(draft: ArticleDraft) -> tuple[str, str, int]:
         )
         if image:
             generated += 1
+            if image.cost_usd is not None:
+                billed = (billed or 0.0) + image.cost_usd
             featured_url = (
                 site.upload_image(
                     image.data, f"{stem}-lead{image.extension}", draft.featured_image_alt
@@ -677,6 +683,8 @@ def illustrate(draft: ArticleDraft) -> tuple[str, str, int]:
             urls.append(None)
             continue
         generated += 1
+        if image.cost_usd is not None:
+            billed = (billed or 0.0) + image.cost_usd
         urls.append(
             site.upload_image(image.data, f"{stem}-{index}{image.extension}", request.alt)
         )
@@ -689,7 +697,7 @@ def illustrate(draft: ArticleDraft) -> tuple[str, str, int]:
         len(requests),
     )
     # Any marker past the cap is dropped rather than published as literal text.
-    return replace_markers(draft.body, urls), featured_url, generated
+    return replace_markers(draft.body, urls), featured_url, generated, billed
 
 
 def finalize(ctx: Context, node_input: dict[str, Any]) -> Event:
@@ -718,7 +726,7 @@ def finalize(ctx: Context, node_input: dict[str, Any]) -> Event:
             ),
         )
 
-    illustrated_body, featured_url, images_made = illustrate(draft)
+    illustrated_body, featured_url, images_made, images_billed = illustrate(draft)
 
     # Built after illustration so the FAQ answers match the body that ships,
     # and from the catalogue rather than the prose, so a product specification
@@ -809,7 +817,7 @@ def finalize(ctx: Context, node_input: dict[str, Any]) -> Event:
             "title": draft.title,
             "remote_id": remote if ok else "",
         },
-        state={"images_generated": images_made},
+        state={"images_generated": images_made, "images_billed_usd": images_billed},
         content=types.Content(role="model", parts=[types.Part.from_text(text=message)]),
     )
 
@@ -875,9 +883,19 @@ def build_researcher() -> LlmAgent:
 
 
 def build_fact_builder() -> LlmAgent:
+    """The author tier, despite being a one-shot transformation.
+
+    This is not the summarising step it looks like. It decides which of the
+    researcher's claims are checkable at all, which source actually supports
+    each one, and which passage to quote — and everything downstream rests on
+    that: the writer may only state what is registered here, and the gate
+    verifies the article against it. A cheap model reads the same notes and
+    registers nothing, which does not fail loudly. It ends the run with
+    "no source solid enough to write from" and a research bill already paid.
+    """
     return LlmAgent(
         name="fact_builder",
-        model=_model(settings.models.worker),
+        model=_model(settings.models.author),
         instruction=prompts.fact_builder_instruction(settings.content),
         output_schema=ResearchBundle,
         output_key="research_bundle",

@@ -115,3 +115,44 @@ def test_rates_parse_from_the_environment_format():
 
 def test_a_malformed_rate_entry_is_dropped_not_fatal():
     assert _parse_rates("good:1:2,broken,also:bad:x") == {"good": (1.0, 2.0)}
+
+
+# ---------------------------------------------- what a picture actually cost
+
+
+def test_a_reported_image_price_beats_the_estimate():
+    """A picture is a flat charge no token count predicts.
+
+    So the configured price is a guess, and a guess is what made a run report
+    a number the invoice disagreed with. Where the provider says what it
+    charged, that is what the run costs.
+    """
+    cost = RunCost()
+    cost.record_image(0.04)
+    cost.record_image(0.04)
+
+    assert cost.estimate_usd({}, image_usd=0.10) == 0.08
+
+
+def test_a_provider_that_says_nothing_is_still_estimated():
+    cost = RunCost()
+    cost.record_image()
+
+    assert cost.estimate_usd({}, image_usd=0.10) == 0.10
+
+
+def test_the_two_kinds_of_picture_are_counted_apart():
+    """One provider reporting and another silent must not double-count."""
+    cost = RunCost()
+    cost.record_image(0.04)
+    cost.record_image()
+
+    assert cost.images == 2
+    assert cost.estimate_usd({}, image_usd=0.10) == 0.14
+
+
+def test_a_free_picture_is_not_the_same_as_an_unpriced_one():
+    cost = RunCost()
+    cost.record_image(0.0)
+
+    assert cost.estimate_usd({}, image_usd=0.10) == 0.0

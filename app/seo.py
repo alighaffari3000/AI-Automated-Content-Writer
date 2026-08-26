@@ -245,6 +245,24 @@ def _issue(
     )
 
 
+def _length_severity(overrun: int, config: SeoConfig) -> Severity:
+    """How much a length being over is worth.
+
+    A search result cuts a title off at a width, so the length is real and the
+    draft is measured against it either way. What this decides is narrower:
+    whether being over is worth another revision round. Three characters past
+    the bar is not -- the article would be rewritten whole, by the most
+    expensive model in the pipeline, to shorten one line of metadata -- so
+    inside the tolerance the defect is reported as minor and travels with the
+    draft to the person reviewing it. Past the tolerance it is a real defect
+    and goes back.
+
+    The gate stays code either way. This moves a threshold; it does not move
+    the decision.
+    """
+    return "minor" if overrun <= config.length_tolerance else "major"
+
+
 def _listing_defects(draft: ArticleDraft, config: SeoConfig) -> list[ReviewIssue]:
     """The search result itself: the one thing every searcher sees."""
     found: list[ReviewIssue] = []
@@ -265,7 +283,7 @@ def _listing_defects(draft: ArticleDraft, config: SeoConfig) -> list[ReviewIssue
             found.append(
                 _issue(
                     "SEO-TITLE-LONG",
-                    "major",
+                    _length_severity(len(title) - config.title_max, config),
                     "seo_title",
                     f"seo_title is {len(title)} characters; it is cut off after about "
                     f"{config.title_max}.",
@@ -315,7 +333,9 @@ def _listing_defects(draft: ArticleDraft, config: SeoConfig) -> list[ReviewIssue
             found.append(
                 _issue(
                     "SEO-META-LONG",
-                    "major",
+                    _length_severity(
+                        len(description) - config.description_max, config
+                    ),
                     "meta_description",
                     f"meta_description is {len(description)} characters and is cut "
                     f"off after about {config.description_max}.",

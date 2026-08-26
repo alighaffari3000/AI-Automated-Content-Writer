@@ -49,12 +49,31 @@ class GeneratedImage:
     request: ImageRequest
     data: bytes
     mime_type: str
+    # What the provider says this one actually cost, when it says. A picture
+    # is a flat charge nobody can predict from a token count, so a configured
+    # estimate is the only alternative -- and an estimate is what made a run
+    # report $0.30 when it had spent rather more.
+    cost_usd: float | None = None
 
     @property
     def extension(self) -> str:
         return {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp"}.get(
             self.mime_type, ".png"
         )
+
+
+def _reported_cost(payload: dict) -> float | None:
+    """What the provider charged for this picture, if it said.
+
+    OpenRouter puts it in `usage.cost`; OpenAI and Google say nothing, and
+    those fall back to IMAGE_PRICE_USD. Read defensively — a run must not fail
+    because accounting could not find a field.
+    """
+    try:
+        cost = (payload.get("usage") or {}).get("cost")
+        return float(cost) if cost is not None else None
+    except (TypeError, ValueError):
+        return None
 
 
 def find_markers(body: str) -> list[ImageRequest]:
@@ -166,6 +185,7 @@ class ImageGenerator:
                 item.get("b64_json"), request, item.get("media_type") or "image/png"
             )
             if image:
+                image.cost_usd = _reported_cost(payload)
                 return image
             # Some of them hand back a link instead of the bytes.
             url = item.get("url")
@@ -176,6 +196,7 @@ class ImageGenerator:
                     request=request,
                     data=fetched.content,
                     mime_type=fetched.headers.get("content-type", "image/png"),
+                    cost_usd=_reported_cost(payload),
                 )
         logger.warning("Image model returned no picture for %r", request.alt)
         return None

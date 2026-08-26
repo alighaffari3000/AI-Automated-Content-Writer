@@ -75,8 +75,14 @@ async def _run_once() -> int:
         app_name=adk_app.name, user_id="scheduler", session_id=session.id
     )
     state = getattr(final, "state", {}) or {}
-    for _ in range(int(state.get("images_generated", 0))):
-        cost.record_image()
+    # What the image provider actually charged, where it said. Spread across
+    # the pictures it made, because the run reports a total and the accounting
+    # counts one picture at a time.
+    made = int(state.get("images_generated", 0))
+    billed = state.get("images_billed_usd")
+    each = (float(billed) / made) if billed is not None and made else None
+    for _ in range(made):
+        cost.record_image(each)
 
     rates, image_usd = settings.cost.rates, settings.cost.image_usd
     logger.info("Run cost:\n%s", cost.summary(rates, image_usd))

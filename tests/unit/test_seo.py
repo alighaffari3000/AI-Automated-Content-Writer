@@ -114,8 +114,30 @@ def test_slugs_are_read_from_whichever_field_the_site_sent():
 
 
 def test_an_over_long_title_is_sent_back():
+    """Well over the bar, so the search result really is cut off."""
+    assert "SEO-TITLE-LONG" in check(seo_title="x" * 90)
+    assert severity_of("SEO-TITLE-LONG", seo_title="x" * 90) == "major"
+
+
+def test_a_title_a_few_characters_over_is_reported_but_not_sent_back():
+    """The length is still measured; what changes is what it costs.
+
+    Sending this back means rewriting a whole article, with the most expensive
+    model in the pipeline, to shorten one line of metadata. The defect still
+    travels with the draft — as a minor issue, for the person who reviews it.
+    """
     assert "SEO-TITLE-LONG" in check(seo_title="x" * 61)
-    assert severity_of("SEO-TITLE-LONG", seo_title="x" * 61) == "major"
+    assert severity_of("SEO-TITLE-LONG", seo_title="x" * 61) == "minor"
+
+
+def test_the_tolerance_has_an_edge_and_it_is_inclusive():
+    assert severity_of("SEO-TITLE-LONG", seo_title="x" * 70) == "minor"
+    assert severity_of("SEO-TITLE-LONG", seo_title="x" * 71) == "major"
+
+
+def test_an_over_long_description_gets_the_same_tolerance():
+    assert severity_of("SEO-META-LONG", meta_description="x" * 170) == "minor"
+    assert severity_of("SEO-META-LONG", meta_description="x" * 200) == "major"
 
 
 def test_a_missing_title_or_description_is_a_defect():

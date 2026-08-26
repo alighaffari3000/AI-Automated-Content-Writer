@@ -28,6 +28,10 @@ class RunCost:
 
     by_model: dict[str, ModelUse] = field(default_factory=dict)
     images: int = 0
+    # Only the pictures whose provider told us what they cost. The rest are
+    # priced from configuration, so the two are counted apart.
+    image_usd_reported: float = 0.0
+    images_reported: int = 0
 
     def record_tokens(self, model: str, input_tokens: int, output_tokens: int) -> None:
         use = self.by_model.setdefault(model or "unknown", ModelUse())
@@ -35,8 +39,11 @@ class RunCost:
         use.input_tokens += input_tokens
         use.output_tokens += output_tokens
 
-    def record_image(self) -> None:
+    def record_image(self, cost_usd: float | None = None) -> None:
         self.images += 1
+        if cost_usd is not None:
+            self.images_reported += 1
+            self.image_usd_reported += cost_usd
 
     @property
     def total_input(self) -> int:
@@ -57,7 +64,12 @@ class RunCost:
         guessing — an unpriced model should show up as a suspiciously cheap
         run, not as a confidently wrong number.
         """
-        total = self.images * image_usd
+        # A picture is a flat charge no token count predicts, so a provider
+        # that reports what it charged is believed, and only the silent ones
+        # are estimated.
+        total = self.image_usd_reported + (
+            (self.images - self.images_reported) * image_usd
+        )
         for name, use in self.by_model.items():
             rate_in, rate_out = _match_rate(name, rates)
             total += (use.input_tokens / 1_000_000) * rate_in
