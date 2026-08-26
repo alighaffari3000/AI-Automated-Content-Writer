@@ -3,11 +3,21 @@
 # arithmetic here.
 
 [Unit]
-Description=Write one article a day
+Description=Write an article on Monday, Wednesday and Friday
 Documentation=https://github.com/alighaffari3000/AI-Automated-Content-Writer
 
 [Timer]
-OnCalendar=*-*-* 06:00:00
+# Three a week rather than seven. Not because search engines reward a
+# cadence -- they do not measure one -- but because of what daily costs on a
+# site this size. Going from three published articles to thirty in a month is
+# the volume ramp Google's scaled-content policy watches for; in a niche this
+# narrow, two articles a week apart start competing for the same query; and
+# every one of these is a draft somebody still has to read. A queue of
+# unreviewed drafts is money spent on nothing.
+#
+# Any OnCalendar works here. `Mon,Wed,Fri` is three a week with no month-end
+# arithmetic; `Mon,Thu` is two; `*-*-* 06:00:00` is back to daily.
+OnCalendar=Mon,Wed,Fri *-*-* 06:00:00
 
 # If the machine was off or rebooting at the hour, write the article on the
 # next boot instead of skipping the day. A pipeline that silently misses days

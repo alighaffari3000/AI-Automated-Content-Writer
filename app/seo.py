@@ -556,8 +556,16 @@ def _keyword_defects(
     if not any(normalize_text(k) in haystack for k in checkable):
         found.append(
             _issue(
+                # Minor, which means it travels with the draft instead of
+                # sending it back. Not because a title without its keyword is
+                # fine — it is the line the searcher reads — but because of
+                # what sending it back costs: the writer rewrites the whole
+                # article to change one line, at about thirty times the price
+                # of the person reviewing it typing a better title. It is the
+                # cheapest defect in this file for a human to fix and among
+                # the most expensive for the pipeline to.
                 "SEO-KEYWORD-TITLE",
-                "major",
+                "minor",
                 "title / seo_title",
                 "Neither the title nor seo_title contains any target keyword: "
                 + ", ".join(checkable[:5]),

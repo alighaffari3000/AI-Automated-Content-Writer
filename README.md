@@ -1,7 +1,7 @@
 # AI Automated Content Writer
 
 A multi-agent pipeline that researches, writes, reviews and revises one article
-per day, then hands it to a human as a draft. Built on the
+at a time, then hands it to a human as a draft. Built on the
 [Google Agent Development Kit](https://adk.dev/) (ADK 2.x).
 
 It is not a "write me a blog post" script. Everything here exists to stop a
@@ -16,7 +16,7 @@ that is comes from configuration.
 ## How a run works
 
 ```
-        cron (once a day)
+      timer (three days a week)
               │
               ▼
       load context ──────────► no topic queued ──► stop and say so

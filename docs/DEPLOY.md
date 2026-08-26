@@ -1,6 +1,8 @@
 # Running this permanently
 
-The pipeline is a daily job, not a service. It wakes up, writes one article,
+The pipeline is a scheduled job, not a service -- three mornings a week as
+installed, and `deploy/content-writer.timer` says why and how to change it. It
+wakes up, writes one article,
 files it as a draft and exits. So there is nothing to keep running and nothing
 listening on a port — what has to be permanent is the schedule, the database,
 and the secrets.

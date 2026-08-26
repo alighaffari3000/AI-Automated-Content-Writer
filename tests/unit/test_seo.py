@@ -225,9 +225,18 @@ def test_without_site_data_link_checking_is_skipped_rather_than_guessed():
 # -------------------------------------------------------------------- keywords
 
 
-def test_a_missing_keyword_in_the_title_is_reported():
+def test_a_missing_keyword_in_the_title_is_reported_but_does_not_send_it_back():
+    """Reported, because the title is the line the searcher actually reads.
+
+    Not sent back, because sending it back means the writer rewrites twelve
+    hundred words to change one line — at roughly thirty times what it costs
+    the person reviewing the draft to retype the title themselves. It is the
+    cheapest defect here for a human to fix and among the dearest for the
+    pipeline to.
+    """
     found = defects(draft(), INDEX, ["depth of discharge"], CONFIG)
     assert "SEO-KEYWORD-TITLE" in ids(found)
+    assert [i.severity for i in found if i.issue_id == "SEO-KEYWORD-TITLE"] == ["minor"]
 
 
 def test_a_keyword_that_is_present_passes():
