@@ -173,7 +173,16 @@ def cmd_check(args: argparse.Namespace) -> int:
         f"{'next category'.rjust(width)} : "
         f"{category['name'] if category else 'NONE DEFINED'}"
     )
-    print(f"{'images'.rjust(width)} : {settings.images.model if settings.images.enabled else 'off'}")
+    images = settings.images
+    print(
+        f"{'images'.rjust(width)} : "
+        + (
+            f"{images.provider}/{images.model}"
+            + ("" if images.configured else " -- KEY NOT SET")
+            if images.enabled
+            else "off"
+        )
+    )
 
     problems = []
     unedited = unedited_settings()
@@ -189,6 +198,14 @@ def cmd_check(args: argparse.Namespace) -> int:
     if not category:
         problems.append(
             "No subject areas defined; run `python -m app.cli categories seed`."
+        )
+    if not settings.images.configured:
+        # Not fatal -- an article without pictures still publishes -- but every
+        # failure in `images.py` is swallowed on purpose, so unless it is said
+        # here it is said nowhere.
+        problems.append(
+            f"IMAGE_PROVIDER={settings.images.provider} has no key or address; "
+            "articles will publish without illustrations."
         )
     for problem in problems:
         print(f"  ! {problem}")

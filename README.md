@@ -130,8 +130,11 @@ uv sync
 cp .env.example .env      # then fill it in
 ```
 
-At minimum set `GEMINI_API_KEY`, `SITE_API_URL` and `SITE_API_TOKEN`. Check
-what the pipeline sees:
+At minimum set `GEMINI_API_KEY`, `IMAGE_API_KEY`, `SITE_API_URL` and
+`SITE_API_TOKEN` — two keys because the pictures come from somewhere else; see
+**Illustration** below. That file beats the machine's own environment, so a
+`GEMINI_API_KEY` exported for some other tool cannot quietly stand in for the
+one here. Check what the pipeline sees:
 
 ```bash
 uv run python -m app.cli check
@@ -203,7 +206,39 @@ The settings worth knowing:
 | `SEO_TITLE_MAX` / `SEO_DESCRIPTION_MAX` | the lengths the gate counts, in characters |
 | `SEO_KNOWN_PATHS` | pages that exist but are neither articles nor products, so a link to them is not read as broken |
 | `SITE_PUBLIC_URL` | where readers see the site, for link checking and structured data |
+| `IMAGE_PROVIDER` / `IMAGE_MODEL` | who draws the pictures; `openrouter` and Seedream by default, not Gemini |
 | `DRY_RUN` | run the whole pipeline without sending anything |
+
+### Illustration
+
+The pictures are the one stage that does not run on Gemini, and provenance is
+the reason. Imagen writes **SynthID** into the pixels of everything it makes —
+an invisible watermark built to survive cropping, resizing and re-encoding —
+so every illustration on the site stays permanently identifiable as generated.
+An OpenAI-shaped provider attaches C2PA metadata instead, which the first
+resize strips, including the one a CMS does when it builds thumbnails.
+
+Worth being honest about what that buys. Google does not penalise generated
+content as such; what a marker earns today is a label beside the picture, not
+a lower ranking. The better argument for moving is that the editorial
+photography is often simply better elsewhere.
+
+The default is Seedream through OpenRouter, with its own key:
+
+```
+IMAGE_PROVIDER=openrouter
+IMAGE_API_KEY=...
+IMAGE_MODEL=bytedance/seedream-4.5
+```
+
+Check the slug against the provider's own model list before trusting it —
+image models are renamed and retired faster than anything else here. Setting
+`IMAGE_PROVIDER=gemini` puts it back on `GEMINI_API_KEY` and one account.
+
+Nothing here can fail a run: every error in `app/images.py` is logged and
+swallowed, because an article without a picture is worth more than no article.
+That is also why `check` reports a missing image key — otherwise the only
+symptom is articles that quietly stop having pictures.
 
 ## Layout
 

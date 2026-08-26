@@ -288,12 +288,54 @@ class SeoConfig:
     )
 
 
+# Where the OpenAI-shaped image services live. An unlisted provider is assumed
+# to be the same shape at whatever IMAGE_BASE_URL says.
+IMAGE_ENDPOINTS = {
+    "openai": "https://api.openai.com/v1",
+    "openrouter": "https://openrouter.ai/api/v1",
+    "avalai": "https://api.avalai.ir/v1",
+}
+
+
 @dataclass(frozen=True)
 class ImageConfig:
-    """Pictures for the article: one lead image plus a few in the body."""
+    """Pictures for the article: one lead image plus a few in the body.
+
+    The only part of the pipeline that may run somewhere other than Gemini,
+    and the reason is provenance rather than price. Imagen writes SynthID into
+    the pixels of everything it makes: an invisible watermark meant to survive
+    cropping, resizing and re-encoding, which leaves every illustration on the
+    site permanently identifiable as generated. OpenAI-shaped providers attach
+    C2PA metadata instead, which any image pipeline strips on the first resize.
+
+    Worth being clear about what that does and does not buy. Google does not
+    penalise generated content as such; what a marker earns today is a label
+    beside the picture, not a lower ranking. Changing provider is cheap and the
+    editorial photography is often better elsewhere, which is the better
+    reason to do it.
+    """
 
     enabled: bool = field(default_factory=lambda: _env_bool("IMAGES_ENABLED", True))
-    model: str = field(default_factory=lambda: _env("IMAGE_MODEL", "gemini-3.1-flash-image"))
+    # `gemini`, or any OpenAI-shaped service: `openai`, `openrouter`, `avalai`,
+    # or an unlisted one at IMAGE_BASE_URL.
+    provider: str = field(
+        default_factory=lambda: _env("IMAGE_PROVIDER", "openrouter").lower()
+    )
+    # Its own key, so the pictures move without the text moving with them. It
+    # falls back to the Gemini key only on the Gemini path, where that is the
+    # same key; anywhere else a text key would just be the wrong credential
+    # sent to the wrong service.
+    api_key: str = field(
+        default_factory=lambda: _env("IMAGE_API_KEY")
+        or (_env("GEMINI_API_KEY") if _env("IMAGE_PROVIDER", "openrouter") == "gemini" else "")
+    )
+    base_url: str = field(default_factory=lambda: _env("IMAGE_BASE_URL"))
+    # Seedream by default, reached through OpenRouter. Name it the way the
+    # provider does — the slug is part of the configuration, not of the code,
+    # and image models are renamed and retired faster than anything else here.
+    model: str = field(
+        default_factory=lambda: _env("IMAGE_MODEL", "bytedance/seedream-4.5")
+    )
     style: str = field(
         default_factory=lambda: _env(
             "IMAGE_STYLE",
@@ -304,6 +346,31 @@ class ImageConfig:
     # A ceiling, not a target: each picture costs a call, and an article
     # wallpapered in generated images looks worse than one with two good ones.
     max_in_body: int = field(default_factory=lambda: _env_int("IMAGE_MAX_IN_BODY", 3))
+
+    @property
+    def is_gemini(self) -> bool:
+        return self.provider == "gemini"
+
+    @property
+    def endpoint(self) -> str:
+        """Where the request goes. IMAGE_BASE_URL always wins.
+
+        Overriding it is how a gateway, a mirror, or a reseller this table has
+        never heard of is reached without waiting for the table to be updated.
+        """
+        return self.base_url or IMAGE_ENDPOINTS.get(self.provider, "")
+
+    @property
+    def configured(self) -> bool:
+        """Whether a picture could be attempted at all.
+
+        `check` reports this rather than a run discovering it: an unconfigured
+        image provider costs the article its illustrations silently, because
+        every failure in `images.py` is swallowed on purpose.
+        """
+        if not self.enabled:
+            return True
+        return bool(self.api_key and (self.is_gemini or self.endpoint))
 
 
 def _parse_rates(raw: str) -> dict[str, tuple[float, float]]:

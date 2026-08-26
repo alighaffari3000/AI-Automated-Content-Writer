@@ -14,9 +14,19 @@ from app import config
 
 
 @pytest.fixture(autouse=True)
-def _forget_placeholders():
-    """The record of unedited settings is module state; keep it per-test."""
+def _forget_placeholders(monkeypatch):
+    """Start each test knowing only what the test itself sets.
+
+    The record of unedited settings is module state, so it is saved and put
+    back. The API keys have to be cleared as well: `unedited_settings` reads
+    them straight from the environment rather than through this module, so
+    without this these tests describe whichever keys the machine running them
+    happens to have — and pass or fail accordingly.
+    """
     seen = set(config._unedited)  # noqa: SLF001 - this module's own bookkeeping
+    config._unedited.clear()  # noqa: SLF001
+    for key in ("GEMINI_API_KEY", "IMAGE_API_KEY"):
+        monkeypatch.delenv(key, raising=False)
     yield
     config._unedited.clear()  # noqa: SLF001
     config._unedited.update(seen)  # noqa: SLF001
