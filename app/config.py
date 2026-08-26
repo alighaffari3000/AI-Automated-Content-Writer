@@ -330,11 +330,12 @@ class ImageConfig:
         or (_env("GEMINI_API_KEY") if _env("IMAGE_PROVIDER", "openrouter") == "gemini" else "")
     )
     base_url: str = field(default_factory=lambda: _env("IMAGE_BASE_URL"))
-    # Seedream by default, reached through OpenRouter. Name it the way the
-    # provider does — the slug is part of the configuration, not of the code,
-    # and image models are renamed and retired faster than anything else here.
+    # Seedream, through OpenRouter: not Google's, which is the SynthID this
+    # setting exists to avoid, and cheaper than OpenAI's. Name it the way the
+    # provider does; the slug is configuration rather than code, because image
+    # models are renamed and retired faster than anything else here.
     model: str = field(
-        default_factory=lambda: _env("IMAGE_MODEL", "bytedance/seedream-4.5")
+        default_factory=lambda: _env("IMAGE_MODEL", "bytedance-seed/seedream-4.5")
     )
     style: str = field(
         default_factory=lambda: _env(

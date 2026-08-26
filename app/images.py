@@ -8,11 +8,10 @@ would mean paying for pictures that get thrown away.
 This is the one stage that may run somewhere other than Gemini, and the reason
 is what each provider leaves behind. Imagen writes SynthID into the pixels --
 an invisible watermark built to survive cropping and re-encoding -- while
-OpenAI-shaped providers attach C2PA metadata that any resize strips. Three
-providers therefore means three shapes of request: Google's own client,
-OpenAI's images route, and OpenRouter, which returns pictures through chat
-completions because it has no images route at all. The differences stop at
-this module's edge.
+OpenAI-shaped providers attach C2PA metadata that any resize strips. So there
+are two shapes of request here: Google's own client, and OpenAI's images
+route, which every compatible reseller implements the same way. The
+differences stop at this module's edge.
 
 What comes back is raw bytes; putting them somewhere the site can serve is the
 site client's job, not this one's.
@@ -121,8 +120,6 @@ class ImageGenerator:
         try:
             if self.config.is_gemini:
                 return self._generate_gemini(request)
-            if self.config.provider == "openrouter":
-                return self._generate_openrouter(request)
             return self._generate_openai(request)
         except Exception as exc:  # noqa: BLE001 - an article beats an illustration
             logger.warning("Image generation failed for %r: %s", request.alt, exc)
@@ -151,7 +148,7 @@ class ImageGenerator:
         return None
 
     def _generate_openai(self, request: ImageRequest) -> GeneratedImage | None:
-        """OpenAI's images route, which most compatible resellers implement."""
+        """OpenAI's images route, which every compatible reseller implements."""
         payload = self._post(
             "/images/generations",
             {
@@ -162,7 +159,12 @@ class ImageGenerator:
             },
         )
         for item in payload.get("data") or []:
-            image = self._decode(item.get("b64_json"), request)
+            # OpenAI itself always sends PNG and says nothing; a reseller
+            # fronting several models says which, and some of them are JPEG.
+            # Believing it is what keeps a JPEG from being filed as `.png`.
+            image = self._decode(
+                item.get("b64_json"), request, item.get("media_type") or "image/png"
+            )
             if image:
                 return image
             # Some of them hand back a link instead of the bytes.
@@ -175,25 +177,6 @@ class ImageGenerator:
                     data=fetched.content,
                     mime_type=fetched.headers.get("content-type", "image/png"),
                 )
-        logger.warning("Image model returned no picture for %r", request.alt)
-        return None
-
-    def _generate_openrouter(self, request: ImageRequest) -> GeneratedImage | None:
-        """OpenRouter has no images route: pictures come back from a chat call."""
-        payload = self._post(
-            "/chat/completions",
-            {
-                "model": self.config.model,
-                "modalities": ["image", "text"],
-                "messages": [{"role": "user", "content": self._full_prompt(request)}],
-            },
-        )
-        for choice in payload.get("choices") or []:
-            for image in (choice.get("message") or {}).get("images") or []:
-                url = ((image or {}).get("image_url") or {}).get("url", "")
-                decoded = self._from_data_uri(url, request)
-                if decoded:
-                    return decoded
         logger.warning("Image model returned no picture for %r", request.alt)
         return None
 

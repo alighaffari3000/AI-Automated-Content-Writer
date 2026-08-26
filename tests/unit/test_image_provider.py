@@ -1,10 +1,9 @@
 """Which service draws the pictures, and how each of them hands them back.
 
-Three shapes of request behind one `generate()`, because the providers do not
-agree on what an image API looks like: Google has its own client, OpenAI has
-an images route, and OpenRouter has neither and returns pictures inside a chat
-completion. What they must agree on is the failure — a picture is never worth
-losing a finished article over, so nothing here may raise.
+Two shapes of request behind one `generate()`: Google has its own client, and
+everyone else implements OpenAI's images route. What they must agree on is the
+failure — a picture is never worth losing a finished article over, so nothing
+here may raise.
 """
 
 from __future__ import annotations
@@ -112,35 +111,45 @@ def test_a_provider_that_returns_a_link_is_followed(monkeypatch):
     assert image.extension == ".webp"
 
 
-# ----------------------------------------------------------------- OpenRouter
+# --------------------------------------------------- what the provider says
 
 
-def test_openrouter_is_asked_through_a_chat_call(monkeypatch):
-    """It has no images route at all; the picture comes back as a data URI."""
-    seen = posting(
+def test_a_jpeg_is_not_filed_as_a_png(monkeypatch):
+    """OpenAI always sends PNG and says nothing; a reseller says which.
+
+    OpenRouter fronts several image models and some of them answer in JPEG.
+    Assuming PNG would put JPEG bytes behind a `.png` name, which the site
+    would then serve with the wrong content type.
+    """
+    posting(
         monkeypatch,
         lambda url: httpx.Response(
             200,
-            json={
-                "choices": [
-                    {
-                        "message": {
-                            "images": [
-                                {"image_url": {"url": f"data:image/png;base64,{ENCODED}"}}
-                            ]
-                        }
-                    }
-                ]
-            },
+            json={"data": [{"b64_json": ENCODED, "media_type": "image/jpeg"}]},
             request=httpx.Request("POST", url),
         ),
     )
 
     image = ImageGenerator(config(provider="openrouter")).generate(REQUEST)
 
-    assert image.data == PIXEL
-    assert seen["url"].endswith("/chat/completions")
-    assert seen["body"]["modalities"] == ["image", "text"]
+    assert image.mime_type == "image/jpeg"
+    assert image.extension == ".jpg"
+
+
+def test_openrouter_uses_the_same_images_route_as_everyone_else(monkeypatch):
+    """It reads `modalities` on a chat call as a hard requirement and 404s on
+    a model that does not advertise them; the images route just works."""
+    seen = posting(
+        monkeypatch,
+        lambda url: httpx.Response(
+            200, json={"data": [{"b64_json": ENCODED}]}, request=httpx.Request("POST", url)
+        ),
+    )
+
+    ImageGenerator(config(provider="openrouter")).generate(REQUEST)
+
+    assert seen["url"] == "https://openrouter.ai/api/v1/images/generations"
+    assert "modalities" not in seen["body"]
 
 
 # ------------------------------------------------------------- failing safely
