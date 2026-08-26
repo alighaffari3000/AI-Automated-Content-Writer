@@ -160,11 +160,16 @@ sudo ./deploy/install.sh
 
 That installs the code under `/opt`, the database under `/var/lib` where it
 survives every update, and the settings under `/etc`; then it enables two
-timers — one that writes an article every morning, one that backs the database
-up every night. No container: this is two minutes of work a day, and nothing at
+timers — one that writes an article on Monday, Wednesday and Friday, one that
+backs the database up every night. No container: this is two minutes of work a day, and nothing at
 all runs between runs. [docs/DEPLOY.md](docs/DEPLOY.md) has the whole runbook —
 what the target site must provide first, what to fill in, how to make the first
 run publish nothing, and what to do when something breaks.
+
+[docs/HOW-IT-WORKS-fa.md](docs/HOW-IT-WORKS-fa.md) is a plain-language tour of
+the same machine in Persian, written for whoever reviews the drafts rather than
+for whoever changes the code: what each verdict means, why an article about
+safety is never approved automatically, and what a run costs.
 
 ## What the site must provide
 
