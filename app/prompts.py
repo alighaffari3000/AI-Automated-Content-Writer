@@ -373,6 +373,10 @@ Illustration:
   usually the outdated one — and a technical term in the prompt tends to get
   written onto the equipment as a label rather than drawn, so describe the
   appearance, not the terminology.
+- Say where each piece of equipment sits, the way a real installer would place
+  it (what stands on the floor, what hangs on the wall, what belongs outdoors).
+  An image model arranges things for composition, not correctness, and a
+  practitioner reads a wrong arrangement as an error in the article.
 - Fewer good images beat more weak ones. An article that genuinely needs only
   the lead image should have only that.
 """.strip()
