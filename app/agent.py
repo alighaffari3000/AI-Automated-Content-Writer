@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 from typing import Any
 
@@ -213,6 +214,11 @@ def load_run_context(ctx: Context, node_input: Any) -> Event:
                 _as_json(orphans) if orphans else "(nothing is short of links)"
             ),
             "claimed_keywords": _as_json(sorted(store.claimed_keywords())[:120]),
+            # `run --topic "..."` hands the planner a subject instead of
+            # letting it invent one. Env rather than a parameter because this
+            # bootstrap runs inside the ADK graph, which nothing else threads
+            # arguments through.
+            "requested_subject": os.environ.get("REQUESTED_SUBJECT", ""),
             "rejected_subjects": "",
             "topic_attempt": 0,
             "round_number": 0,

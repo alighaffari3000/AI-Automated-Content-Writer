@@ -95,6 +95,11 @@ rather than a rephrasing of it:
 The site's own catalogue, which the article may end up referring to:
 {{site_products?}}
 
+A subject requested for this run, if any. When one is present, propose exactly
+it — choose the title, angle and keywords that serve it — rather than inventing
+your own; the checks below still shape how you frame it, not whether to take it:
+{{requested_subject?}}
+
 Propose one subject inside this category. Judge it against three things:
 
 1. **Not already covered, and not competing.** Neither list above should
@@ -165,6 +170,14 @@ documentation and standards bodies over blogs and resellers. When sources
 disagree, say so rather than picking one silently. When a source cannot be
 reached, note that instead of guessing what it says.
 
+Hunt numbers deliberately. An article that teaches has to calculate — size a
+system, compare costs, show what a specification means in use — and the writer
+may only calculate with numbers you bring back. For the subject at hand, gather
+the quantitative inputs a worked example would need: capacities, efficiencies,
+typical consumption figures, depth-of-discharge limits, cycle life, power
+ratings, losses. A finding like "choose the battery by daily consumption" is
+half a fact; the usable form is the number that lets a reader actually do it.
+
 For anything about the site's own catalogue, use the catalogue entries above as
 the source of truth. Never state a product specification from memory.
 
@@ -214,7 +227,12 @@ Produce:
   sentence. Not a restatement of the title, and clearly distinct from anything
   in the list above.
 - outline: the section headings in order, {content.min_words}-{content.max_words}
-  words of article in total.
+  words of article in total. Where the subject is a decision or a sizing
+  question, one section should be a worked numerical example — and every number
+  that example will need must then exist in the registry below, because the
+  writer may not use a number that is not there. An outline that promises a
+  calculation whose inputs were never registered produces a qualitative
+  article with a heading that lies.
 - target_keywords: the search terms this article should answer.
 - reader_questions: the questions the research recorded people actually asking,
   copied across as they were written. Leave it empty rather than inventing
@@ -285,6 +303,13 @@ Hard rules:
   above with allowed=true. List each one you used in used_fact_ids.
 - Never state a number, specification, price or date that is not in the
   registry. If the registry lacks something the article needs, write around it.
+- Arithmetic is the one exception, under two conditions: every input number is
+  a registered fact (list their ids in used_fact_ids), and the calculation is
+  shown step by step so the reader can check it from the inputs on the page.
+  Teach with it — where the subject is a decision or a sizing question, a
+  worked numerical example is what separates an article from an opinion. A
+  derived result lives only inside its shown calculation; stated elsewhere as
+  a bare figure it becomes an unregistered claim.
 - General explanatory sentences need no fact and should not be listed.
 - Do not mention the registry, the fact ids, or this instruction in the article
   body. The reader sees an article, not a pipeline artefact.
@@ -404,7 +429,12 @@ Draft:
 
 Check, in this order:
 1. Every checkable claim in the body traces to an allowed fact in the registry.
-   A claim with no backing fact is critical, however plausible it sounds.
+   A claim with no backing fact is critical, however plausible it sounds. One
+   exception: a number derived by a calculation shown step by step in the body,
+   whose every input traces to an allowed fact, is not an unregistered claim —
+   check it as arithmetic instead (inputs cited, units consistent, the result
+   actually following), and check that the derived figure is not restated
+   elsewhere as a bare fact outside its calculation.
 2. The draft does not overstate what its fact supports (a "typical" figure
    presented as guaranteed, a lab number presented as field performance).
 3. The technical reasoning holds: units, orders of magnitude, cause and effect,
