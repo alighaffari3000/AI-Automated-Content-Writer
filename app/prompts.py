@@ -387,6 +387,11 @@ Illustration:
   component in use. Do not ask for charts, diagrams, numbers, labels or any
   image containing text — an image model writes text badly, and a wrong number
   in a picture is a wrong claim in the article.
+- Anchor every image in what this article specifically discusses — the
+  scenario of its worked example, the setting of the decision it walks
+  through, the thing it compares — never a generic scene from the domain.
+  The test: a picture that would fit any other article in this category
+  equally well is not this article's picture, it is wallpaper.
 - Prefer wide, contextual scenes — an installation in its setting, equipment
   seen from a few steps back — over close-ups of hardware. An image model
   invents fine detail, and invented detail only shows at close range.
