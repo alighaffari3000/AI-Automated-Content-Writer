@@ -1,9 +1,9 @@
 """Command line entry points.
 
     python -m app.cli check              show what is configured and what is missing
-    python -m app.cli topics add "..."   queue a topic
-    python -m app.cli topics list        show the queue
+    python -m app.cli topics list        what the planner has written about
     python -m app.cli run                produce today's draft (this is the cron job)
+    python -m app.cli run --topic "..."  produce a draft about this subject
 
 `run` is deliberately quiet on success and loud on failure: it is meant to be
 called by cron and read in a log afterwards.
@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import os
 import sys
 import uuid
 
@@ -104,6 +105,10 @@ async def _run_once() -> int:
 
 
 def cmd_run(args: argparse.Namespace) -> int:
+    if getattr(args, "topic", ""):
+        # Read back out of the environment inside the ADK graph's bootstrap,
+        # which nothing else threads arguments through.
+        os.environ["REQUESTED_SUBJECT"] = args.topic
     try:
         # A previous run that was killed mid-flight left its article stuck, its
         # category's turn consumed and its topic falsely logged as covered.
@@ -397,9 +402,13 @@ def main(argv: list[str] | None = None) -> int:
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
-    sub.add_parser("run", help="produce today's draft", parents=[common]).set_defaults(
-        func=cmd_run
+    run = sub.add_parser("run", help="produce today's draft", parents=[common])
+    run.add_argument(
+        "--topic",
+        default="",
+        help="write about this subject instead of letting the planner choose",
     )
+    run.set_defaults(func=cmd_run)
     sub.add_parser(
         "check", help="show configuration and readiness", parents=[common]
     ).set_defaults(func=cmd_check)

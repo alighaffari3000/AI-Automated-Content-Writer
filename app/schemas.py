@@ -125,12 +125,20 @@ class ArticleDraft(BaseModel):
     body: str = Field(
         description=(
             "Full article in Markdown. Mark where a picture belongs with "
-            "[[IMAGE: what it shows | alt text]] on its own line."
+            "[[IMAGE: what it shows | alt text | rendering style]] on its own "
+            "line; the style segment is optional."
         )
     )
     featured_image_prompt: str = Field(
         default="",
         description="What the lead image should show, described for an image model.",
+    )
+    featured_image_style: str = Field(
+        default="",
+        description=(
+            "Rendering style for the lead image, in English. Empty means the "
+            "site's configured default style."
+        ),
     )
     featured_image_alt: str = Field(
         default="",

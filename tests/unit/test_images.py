@@ -22,6 +22,26 @@ def test_markers_are_found_in_the_order_they_appear():
     assert [r.prompt for r in find_markers(body)] == ["first", "second"]
 
 
+def test_a_two_part_marker_takes_the_default_style():
+    requests = find_markers("[[IMAGE: an inverter on a wall | اینورتر]]")
+    assert requests[0].style == ""
+
+
+def test_a_three_part_marker_carries_its_own_style():
+    body = "[[IMAGE: a pump room | موتورخانه | photorealistic editorial photography]]"
+    requests = find_markers(body)
+    assert len(requests) == 1
+    assert requests[0].alt == "موتورخانه"
+    assert requests[0].style == "photorealistic editorial photography"
+
+
+def test_a_styled_marker_is_replaced_like_any_other():
+    body = "Before.\n\n[[IMAGE: a pump room | موتورخانه | soft friendly cartoon illustration]]\n\nAfter."
+    result = replace_markers(body, ["/uploads/x.png"])
+    assert "![موتورخانه](/uploads/x.png)" in result
+    assert "[[IMAGE:" not in result
+
+
 def test_a_generated_image_replaces_its_marker():
     body = "Before.\n\n[[IMAGE: an inverter on a wall | اینورتر]]\n\nAfter."
     result = replace_markers(body, ["/uploads/x.png"])

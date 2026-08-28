@@ -95,6 +95,11 @@ rather than a rephrasing of it:
 The site's own catalogue, which the article may end up referring to:
 {{site_products?}}
 
+A subject requested for this run, if any. When one is present, propose exactly
+it — choose the title, angle and keywords that serve it — rather than inventing
+your own; the checks below still shape how you frame it, not whether to take it:
+{{requested_subject?}}
+
 Propose one subject inside this category. Judge it against three things:
 
 1. **Not already covered, and not competing.** Neither list above should
@@ -165,6 +170,17 @@ documentation and standards bodies over blogs and resellers. When sources
 disagree, say so rather than picking one silently. When a source cannot be
 reached, note that instead of guessing what it says.
 
+Hunt numbers deliberately. An article that teaches has to calculate — size a
+system, compare costs, show what a specification means in use — and the writer
+may only calculate with numbers you bring back. Start by deciding what this
+article's worked example will compute for the reader — that decision is your
+shopping list. Then fetch every input on it from a source: the consumption
+figures of the actual loads involved, capacities, efficiencies, power ratings,
+losses, duty cycles. A finding like "choose the battery by daily consumption"
+is half a fact; the usable form is the number that lets a reader actually do
+it. Research that comes back rich in generic background figures but missing
+the example's inputs has fetched the wrong numbers.
+
 For anything about the site's own catalogue, use the catalogue entries above as
 the source of truth. Never state a product specification from memory.
 
@@ -214,7 +230,19 @@ Produce:
   sentence. Not a restatement of the title, and clearly distinct from anything
   in the list above.
 - outline: the section headings in order, {content.min_words}-{content.max_words}
-  words of article in total.
+  words of article in total. Where the subject is a decision or a sizing
+  question, one section should be a worked numerical example — and every number
+  that example will need must then exist in the registry below, because the
+  writer may not use a number that is not there. An outline that promises a
+  calculation whose inputs were never registered produces a qualitative
+  article with a heading that lies. The example computes this article's own
+  question, with this article's own loads and quantities — not a neighbouring
+  calculation the research happened to have better numbers for.
+  Every section serves the question in the title. A background concept the
+  site already covers in another article (the list below) gets one sentence
+  and an internal link, never its own section — a reader who wants the full
+  treatment is one click away, and re-teaching it here buries what this
+  article alone offers.
 - target_keywords: the search terms this article should answer.
 - reader_questions: the questions the research recorded people actually asking,
   copied across as they were written. Leave it empty rather than inventing
@@ -285,6 +313,18 @@ Hard rules:
   above with allowed=true. List each one you used in used_fact_ids.
 - Never state a number, specification, price or date that is not in the
   registry. If the registry lacks something the article needs, write around it.
+- Arithmetic is the one exception, under two conditions: every input number is
+  a registered fact (list their ids in used_fact_ids), and the calculation is
+  shown step by step so the reader can check it from the inputs on the page.
+  Teach with it — where the subject is a decision or a sizing question, a
+  worked numerical example is what separates an article from an opinion. A
+  derived result lives only inside its shown calculation; stated elsewhere as
+  a bare figure it becomes an unregistered claim.
+- Stay on the question the title asks. Background a reader needs gets a
+  sentence and, where the plan names one, an internal link — not a section.
+  Writing at length about a neighbouring concept because the registry happens
+  to hold good numbers for it is drift: the reader came for this article's
+  answer, not for a tour of what the research found.
 - General explanatory sentences need no fact and should not be listed.
 - Do not mention the registry, the fact ids, or this instruction in the article
   body. The reader sees an article, not a pipeline artefact.
@@ -353,15 +393,33 @@ Illustration:
   where it earns its place — beside the section it illustrates, never decorating
   the opening or padding the end:
 
-      [[IMAGE: what the picture shows, described for an image model | alt text]]
+      [[IMAGE: what the picture shows, described for an image model | alt text | rendering style]]
 
-  The description before the pipe is in English and is instructions to an image
-  model. The alt text after the pipe is in {content.language_name} and is for a
-  reader.
+  The description before the first pipe is in English and is instructions to an
+  image model. The alt text is in {content.language_name} and is for a reader.
+- The third segment, and featured_image_style for the lead image, choose how
+  the picture is rendered. Leave it empty to take the site's default style, or
+  set it (in English) when the content calls for a different treatment — pick
+  what serves the picture, not variety for its own sake:
+  - photorealistic editorial photography, where seeing the real thing is the
+    point: a place, materials, equipment in a real setting. Realism invents
+    brands and fine detail, so use it for scenes viewed from a few steps back,
+    never close-ups of hardware.
+  - flat or isometric editorial illustration, for how-things-fit-together:
+    installations, arrangements, spatial explanations.
+  - soft friendly cartoon illustration, where the section speaks to everyday
+    life rather than equipment: habits, mistakes, people using things.
+  All render with no text and no logos regardless of style — that rule is
+  appended in code.
 - Ask for pictures of real things: equipment in place, an installation, a
   component in use. Do not ask for charts, diagrams, numbers, labels or any
   image containing text — an image model writes text badly, and a wrong number
   in a picture is a wrong claim in the article.
+- Anchor every image in what this article specifically discusses — the
+  scenario of its worked example, the setting of the decision it walks
+  through, the thing it compares — never a generic scene from the domain.
+  The test: a picture that would fit any other article in this category
+  equally well is not this article's picture, it is wallpaper.
 - Prefer wide, contextual scenes — an installation in its setting, equipment
   seen from a few steps back — over close-ups of hardware. An image model
   invents fine detail, and invented detail only shows at close range.
@@ -404,7 +462,12 @@ Draft:
 
 Check, in this order:
 1. Every checkable claim in the body traces to an allowed fact in the registry.
-   A claim with no backing fact is critical, however plausible it sounds.
+   A claim with no backing fact is critical, however plausible it sounds. One
+   exception: a number derived by a calculation shown step by step in the body,
+   whose every input traces to an allowed fact, is not an unregistered claim —
+   check it as arithmetic instead (inputs cited, units consistent, the result
+   actually following), and check that the derived figure is not restated
+   elsewhere as a bare fact outside its calculation.
 2. The draft does not overstate what its fact supports (a "typical" figure
    presented as guaranteed, a lab number presented as field performance).
 3. The technical reasoning holds: units, orders of magnitude, cause and effect,
@@ -490,6 +553,13 @@ count. Judge what cannot be counted:
 5. The language is correct and natural for a native reader: grammar,
    punctuation, and sentences that do not read as translated or machine-made.
 6. Tone matches: {content.tone}. No hype, no empty superlatives.
+7. The article stays on its own question. A section that re-teaches a subject
+   the site already covers in another article (the list above), or that
+   wanders into a neighbouring concept at length, is a major issue — name the
+   section and say what to cut it down to.
+8. Where the title promises a decision or a sizing answer, the article shows
+   the reader how to compute it — a worked numerical example, not advice in
+   the abstract. Its absence in such an article is a major issue.
 
 {SCORING_RULE}
 Issue ids start with SEO-. Set reviewer to exactly "seo_editorial".

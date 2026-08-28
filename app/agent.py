@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 from typing import Any
 
@@ -168,12 +169,14 @@ def load_run_context(ctx: Context, node_input: Any) -> Event:
         [seo.slug_of(s) or s.lower() for s in seo.slugs_from(articles)]
     )
 
+    requested_subject = os.environ.get("REQUESTED_SUBJECT", "")
     logger.info(
-        "Run started: category=%r (%s article(s) so far) products=%s published=%s",
+        "Run started: category=%r (%s article(s) so far) products=%s published=%s%s",
         category["name"],
         category["times_used"],
         len(products),
         len(articles),
+        f" requested_subject={requested_subject!r}" if requested_subject else "",
     )
 
     return Event(
@@ -213,6 +216,11 @@ def load_run_context(ctx: Context, node_input: Any) -> Event:
                 _as_json(orphans) if orphans else "(nothing is short of links)"
             ),
             "claimed_keywords": _as_json(sorted(store.claimed_keywords())[:120]),
+            # `run --topic "..."` hands the planner a subject instead of
+            # letting it invent one. Env rather than a parameter because this
+            # bootstrap runs inside the ADK graph, which nothing else threads
+            # arguments through.
+            "requested_subject": requested_subject,
             "rejected_subjects": "",
             "topic_attempt": 0,
             "round_number": 0,
@@ -662,7 +670,11 @@ def illustrate(draft: ArticleDraft) -> tuple[str, str, int, float | None]:
     featured_url = ""
     if draft.featured_image_prompt:
         image = generator.generate(
-            ImageRequest(draft.featured_image_prompt, draft.featured_image_alt)
+            ImageRequest(
+                draft.featured_image_prompt,
+                draft.featured_image_alt,
+                draft.featured_image_style,
+            )
         )
         if image:
             generated += 1
