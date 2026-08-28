@@ -365,11 +365,14 @@ Illustration:
 - Prefer wide, contextual scenes — an installation in its setting, equipment
   seen from a few steps back — over close-ups of hardware. An image model
   invents fine detail, and invented detail only shows at close range.
-- Name the exact, current generation of whatever the picture shows, and rule
-  out the obsolete one it might be confused with (for example "a modern
-  LiFePO4 battery cabinet, not lead-acid batteries"). Left to itself, an image
-  model draws the most-photographed version of a thing, which in a technical
-  field is usually the outdated one.
+- Describe what the current generation of the equipment looks like, and rule
+  out the shape of the obsolete one it might be confused with (for example "a
+  slim wall-mounted home battery unit with a smooth sealed front panel, not a
+  rack of individual boxy batteries"). Left to itself, an image model draws
+  the most-photographed version of a thing, which in a technical field is
+  usually the outdated one — and a technical term in the prompt tends to get
+  written onto the equipment as a label rather than drawn, so describe the
+  appearance, not the terminology.
 - Fewer good images beat more weak ones. An article that genuinely needs only
   the lead image should have only that.
 """.strip()
