@@ -169,12 +169,14 @@ def load_run_context(ctx: Context, node_input: Any) -> Event:
         [seo.slug_of(s) or s.lower() for s in seo.slugs_from(articles)]
     )
 
+    requested_subject = os.environ.get("REQUESTED_SUBJECT", "")
     logger.info(
-        "Run started: category=%r (%s article(s) so far) products=%s published=%s",
+        "Run started: category=%r (%s article(s) so far) products=%s published=%s%s",
         category["name"],
         category["times_used"],
         len(products),
         len(articles),
+        f" requested_subject={requested_subject!r}" if requested_subject else "",
     )
 
     return Event(
@@ -218,7 +220,7 @@ def load_run_context(ctx: Context, node_input: Any) -> Event:
             # letting it invent one. Env rather than a parameter because this
             # bootstrap runs inside the ADK graph, which nothing else threads
             # arguments through.
-            "requested_subject": os.environ.get("REQUESTED_SUBJECT", ""),
+            "requested_subject": requested_subject,
             "rejected_subjects": "",
             "topic_attempt": 0,
             "round_number": 0,
