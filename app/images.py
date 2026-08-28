@@ -35,13 +35,20 @@ logger = logging.getLogger(__name__)
 
 # The writer marks a spot in the Markdown like this:
 #     [[IMAGE: what the picture shows | the alt text]]
-IMAGE_MARKER = re.compile(r"\[\[IMAGE:\s*(?P<prompt>[^|\]]+?)\s*\|\s*(?P<alt>[^\]]+?)\s*\]\]")
+# and may append a third segment to pick this picture's rendering style,
+# where the content calls for something other than the configured default:
+#     [[IMAGE: what the picture shows | the alt text | the style]]
+IMAGE_MARKER = re.compile(
+    r"\[\[IMAGE:\s*(?P<prompt>[^|\]]+?)\s*\|\s*(?P<alt>[^|\]]+?)\s*"
+    r"(?:\|\s*(?P<style>[^\]]+?)\s*)?\]\]"
+)
 
 
 @dataclass
 class ImageRequest:
     prompt: str
     alt: str
+    style: str = ""
 
 
 @dataclass
@@ -79,7 +86,11 @@ def _reported_cost(payload: dict) -> float | None:
 def find_markers(body: str) -> list[ImageRequest]:
     """Every image the writer asked for, in the order they appear."""
     return [
-        ImageRequest(prompt=m.group("prompt").strip(), alt=m.group("alt").strip())
+        ImageRequest(
+            prompt=m.group("prompt").strip(),
+            alt=m.group("alt").strip(),
+            style=(m.group("style") or "").strip(),
+        )
         for m in IMAGE_MARKER.finditer(body)
     ]
 
@@ -127,7 +138,7 @@ class ImageGenerator:
     def _full_prompt(self, request: ImageRequest) -> str:
         return (
             f"{request.prompt.strip()}\n\n"
-            f"Style: {self.config.style}\n"
+            f"Style: {request.style or self.config.style}\n"
             "No text, no words, no letters, no logos, no watermarks anywhere in "
             "the image. Nothing that looks like a stock-photo caption. "
             "Equipment as it exists today: current-generation technology, "

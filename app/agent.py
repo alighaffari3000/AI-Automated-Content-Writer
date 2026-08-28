@@ -670,7 +670,11 @@ def illustrate(draft: ArticleDraft) -> tuple[str, str, int, float | None]:
     featured_url = ""
     if draft.featured_image_prompt:
         image = generator.generate(
-            ImageRequest(draft.featured_image_prompt, draft.featured_image_alt)
+            ImageRequest(
+                draft.featured_image_prompt,
+                draft.featured_image_alt,
+                draft.featured_image_style,
+            )
         )
         if image:
             generated += 1
