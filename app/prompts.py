@@ -362,6 +362,14 @@ Illustration:
   component in use. Do not ask for charts, diagrams, numbers, labels or any
   image containing text — an image model writes text badly, and a wrong number
   in a picture is a wrong claim in the article.
+- Prefer wide, contextual scenes — an installation in its setting, equipment
+  seen from a few steps back — over close-ups of hardware. An image model
+  invents fine detail, and invented detail only shows at close range.
+- Name the exact, current generation of whatever the picture shows, and rule
+  out the obsolete one it might be confused with (for example "a modern
+  LiFePO4 battery cabinet, not lead-acid batteries"). Left to itself, an image
+  model draws the most-photographed version of a thing, which in a technical
+  field is usually the outdated one.
 - Fewer good images beat more weak ones. An article that genuinely needs only
   the lead image should have only that.
 """.strip()

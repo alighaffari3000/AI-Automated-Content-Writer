@@ -130,8 +130,8 @@ class ImageGenerator:
             f"Style: {self.config.style}\n"
             "No text, no words, no letters, no logos, no watermarks anywhere in "
             "the image. Nothing that looks like a stock-photo caption. "
-            "Photographically plausible: real equipment, correct proportions, "
-            "no invented hardware."
+            "Equipment as it exists today: current-generation technology, "
+            "correct proportions, no invented and no obsolete hardware."
         )
 
     def generate(self, request: ImageRequest) -> GeneratedImage | None:
