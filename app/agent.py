@@ -25,6 +25,7 @@ import json
 import logging
 import os
 import re
+from collections import Counter
 from typing import Any
 
 from google.adk.agents import LlmAgent
@@ -53,6 +54,7 @@ from .sources import (
 from .rules import evaluate_reviews
 from .schemas import (
     ArticleDraft,
+    Fact,
     ResearchBundle,
     ReviewResult,
     RevisionDirective,
@@ -399,6 +401,51 @@ def collect_sources(callback_context: CallbackContext) -> None:
     logger.info("Grounding produced %s distinct source(s).", len(index.sources))
 
 
+REPORTED_COVERAGE = re.compile(r"(\d+)%")
+
+
+def _reported_coverage(note: str) -> int:
+    """How near an audit note says its fact came, for ranking the near misses."""
+    match = REPORTED_COVERAGE.search(note)
+    return int(match.group(1)) if match else 0
+
+
+def diagnose_empty_registry(facts: list[Fact], index: SourceIndex) -> str:
+    """Why this run has nothing to write from, in one line.
+
+    A run that stops is cheap; a run that stops without saying why costs an
+    afternoon of reading the database by hand to find out whether the model
+    invented its sources, the network ate the pages, or a real passage went
+    unrecognised. The audit already knows which — this only has to say it.
+    """
+    if not facts:
+        return "The fact builder registered no claims at all from the research notes."
+
+    reasons = Counter(
+        (fact.audit_note or "no reason recorded").split(" — ")[0] for fact in facts
+    )
+    summary = "; ".join(
+        f"{count} x {reason}" for reason, count in reasons.most_common()
+    )
+    lines = [f"{len(facts)} claim(s) registered, none usable: {summary}."]
+
+    # The near miss, if there was one. This is the line that says whether the
+    # sources were wrong or the check was: a passage matching most of a page
+    # and missing one figure is not a fabricated citation.
+    detailed = [f.audit_note for f in facts if " — " in (f.audit_note or "")]
+    if detailed:
+        nearest = max(detailed, key=_reported_coverage)
+        lines.append(f"Closest: {nearest.split(' — ', 1)[1]}.")
+
+    unreachable = [s for s in index.sources.values() if s.reachable is False]
+    if unreachable:
+        lines.append(
+            f"{len(unreachable)} of {len(index.sources)} source(s) could not be "
+            f"reached: {', '.join(s.domain or s.url for s in unreachable[:3])}."
+        )
+    return " ".join(lines)
+
+
 def persist_registry(ctx: Context, node_input: Any) -> Event:
     """Audit every fact against its real sources, then store the registry.
 
@@ -464,14 +511,17 @@ def persist_registry(ctx: Context, node_input: Any) -> Event:
         downgraded,
     )
     if not allowed:
+        diagnosis = diagnose_empty_registry(bundle.facts, index)
+        logger.warning("Nothing usable came out of the registry. %s", diagnosis)
         return Event(
-            output={"status": "no_facts"},
+            output={"status": "no_facts", "diagnosis": diagnosis},
             route="no_facts",
             content=types.Content(
                 role="model",
                 parts=[
                     types.Part.from_text(
-                        text="Research produced no usable facts; stopping before writing."
+                        text="Research produced no usable facts; stopping before "
+                        f"writing. {diagnosis}"
                     )
                 ],
             ),
@@ -846,12 +896,15 @@ def abort_run(ctx: Context, node_input: dict[str, Any]) -> Event:
         "no_facts": "Research found no source solid enough to write from.",
     }
     reason = reasons.get(status, "The run stopped early.")
+    # What the step that stopped already worked out, rather than a message that
+    # sends whoever reads it to the database to find out what happened.
+    diagnosis = str((node_input or {}).get("diagnosis", "")).strip()
 
     article_id = int(ctx.state.get("article_id", 0))
     category_id = int(ctx.state.get("category_id", 0))
     topic_id = int(ctx.state.get("topic_id", 0))
     if article_id:
-        get_store().fail_article(article_id, reason)
+        get_store().fail_article(article_id, f"{reason} {diagnosis}".strip())
     # Give the turn back, so a failed run does not cost this category its slot.
     if category_id and status != "no_category":
         get_store().release_category(category_id)
@@ -861,8 +914,13 @@ def abort_run(ctx: Context, node_input: dict[str, Any]) -> Event:
         get_store().discard_topic(topic_id)
 
     if status != "no_category":
-        build_notifier(settings.notify).send(f"Today's run stopped: {reason}")
-    logger.warning("Run aborted (%s): %s", status, reason)
+        message = f"Today's run stopped: {reason}"
+        if diagnosis:
+            message += f"\n\n{diagnosis}"
+        build_notifier(settings.notify).send(message)
+    logger.warning(
+        "Run aborted (%s): %s%s", status, reason, f" {diagnosis}" if diagnosis else ""
+    )
     return Event(
         output={"status": status},
         content=types.Content(role="model", parts=[types.Part.from_text(text=reason)]),

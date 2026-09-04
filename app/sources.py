@@ -489,8 +489,34 @@ def fetch_pages(
     )
 
 
-def passage_state(evidence: str, source: Source) -> str:
-    """Whether this page says what it was cited as saying.
+@dataclass(frozen=True)
+class PassageCheck:
+    """What the page comparison found, and how close it came.
+
+    The state alone says a passage is absent; the measurements say why, which
+    is the difference between a claim the source never made and a claim whose
+    figures were written in a notation this check could not read. Both end the
+    run in the same place, and only one of them is the model's fault.
+    """
+
+    state: str
+    coverage: float = 0.0
+    missing_figures: tuple[str, ...] = ()
+
+    def why(self) -> str:
+        """The measurements, phrased for someone reading a stopped run."""
+        if self.state != "absent":
+            return ""
+        parts = [f"{self.coverage:.0%} of its words are on the page"]
+        if self.missing_figures:
+            parts.append("but it never states " + ", ".join(self.missing_figures))
+        else:
+            parts.append(f"which is under the {PARAPHRASED:.0%} a rewording needs")
+        return "; ".join(parts)
+
+
+def passage_check(evidence: str, source: Source) -> PassageCheck:
+    """Whether this page says what it was cited as saying, and how nearly.
 
     Three answers, and the third is the one that matters: `absent` means the
     page was read, had real content, and did not contain the passage — which
@@ -498,9 +524,9 @@ def passage_state(evidence: str, source: Source) -> str:
     source is.
     """
     if source.from_registry:
-        return "quoted"
+        return PassageCheck("quoted")
     if not evidence.strip() or not source.readable:
-        return "unchecked"
+        return PassageCheck("unchecked")
 
     # The page's side of the comparison is computed once per source, however
     # many facts cite it: normalising and shingling a megabyte of text is real
@@ -509,22 +535,27 @@ def passage_state(evidence: str, source: Source) -> str:
 
     words = tokens(evidence)
     if normalize_text(evidence) in norm_page:
-        return "quoted"
+        return PassageCheck("quoted")
     wanted_shingles = shingles(words)
     if wanted_shingles and (
         len(wanted_shingles & page_shingles) / len(wanted_shingles) >= QUOTED
     ):
-        return "quoted"
+        return PassageCheck("quoted")
 
     # Numbers decide the close calls. Vocabulary repeats across a subject and
     # proves little by itself, but a page carrying every figure the passage
     # states as well as most of its words is the page the passage came from.
     wanted = numbers_in(evidence)
-    figures_present = not wanted or wanted <= page_numbers
+    missing = wanted - page_numbers
     coverage = len(set(words) & page_words) / len(set(words)) if words else 0.0
-    if figures_present and coverage >= PARAPHRASED:
-        return "paraphrased"
-    return "absent"
+    if not missing and coverage >= PARAPHRASED:
+        return PassageCheck("paraphrased", coverage)
+    return PassageCheck("absent", coverage, tuple(sorted(missing)))
+
+
+def passage_state(evidence: str, source: Source) -> str:
+    """The verdict alone, for the callers that do not report on near misses."""
+    return passage_check(evidence, source).state
 
 
 CITATION = re.compile(r"src-\d+")
@@ -573,15 +604,26 @@ def audit_fact(
         )
 
     live = [s for s in found if s.reachable is not False]
-    states = [passage_state(evidence, s) for s in live]
+    checks = [passage_check(evidence, s) for s in live]
+    states = [c.state for c in checks]
     if "quoted" not in states and "paraphrased" not in states and "absent" in states:
         # The page was read and does not contain what it was quoted for. This
         # is the failure no reviewer can catch, because the article and the
         # registry agree with each other perfectly.
+        #
+        # How near it came is recorded with it. A passage sharing most of the
+        # page's words and missing one figure is a different problem from one
+        # sharing nothing, and a run that stopped without saying which is a
+        # morning spent reading source code.
+        nearest = max(
+            (c for c in checks if c.state == "absent"), key=lambda c: c.coverage
+        )
+        detail = nearest.why()
         return FactAudit(
             "LOW",
             confidence != "HIGH",
-            "the quoted passage was not found on the page it cites",
+            "the quoted passage was not found on the page it cites"
+            + (f" — {detail}" if detail else ""),
         )
 
     verified = "quoted" in states or "paraphrased" in states

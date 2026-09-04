@@ -25,6 +25,7 @@ from app.sources import (
     classify_domain,
     harvest,
     page_text,
+    passage_check,
     passage_state,
     published_date,
 )
@@ -232,6 +233,59 @@ def test_a_passage_that_is_simply_not_there_is_absent():
         source_with(page("This page is about mounting rails and roof hooks.")),
     )
     assert state == "absent"
+
+
+def test_a_figure_written_with_a_persian_decimal_point_is_the_same_figure():
+    """A Persian decimal point and an ASCII one write the same number.
+
+    This is what stopped a whole morning's run: every claim resting on a
+    decimal was reported as absent from pages that stated it plainly. The two
+    digits below look alike on purpose — that is the whole test.
+    """
+    state = passage_state(
+        "ظرفیت باتری ۵.۱۲ کیلووات‌ساعت است و برای بار شبانه کافی است",  # noqa: RUF001
+        source_with(
+            page("این باتری با ظرفیت ۵/۱۲ کیلووات ساعت برای بار شبانه کافی است")  # noqa: RUF001
+        ),
+    )
+    assert state != "absent"
+
+
+def test_a_model_number_is_not_a_figure_a_page_has_to_confirm():
+    """No page can state the `01` inside SUN-6K-OG01LP1-EU-AM2.
+
+    Reading one out of a part number made every claim that named a product
+    permanently unverifiable, which is the opposite of what the check is for.
+    """
+    state = passage_state(
+        "the SUN-6K-OG01LP1-EU-AM2 inverter is rated at 6 kW continuous",
+        source_with(page("The SUN-6K-OG01LP1-EU-AM2 is rated 6 kW continuous output.")),
+    )
+    assert state in {"quoted", "paraphrased"}
+
+
+def test_a_real_figure_stuck_to_its_unit_is_still_checked():
+    """Dropping identifiers must not quietly drop `5kWh` with them."""
+    state = passage_state(
+        "the pack stores 5kWh which covers the evening load",
+        source_with(page("This pack stores 9kWh and covers the evening load easily.")),
+    )
+    assert state == "absent"
+
+
+def test_an_absent_passage_says_how_near_it_came():
+    """A stopped run has to name its own cause, or someone reads the database.
+
+    Most of the words present and one figure missing is a different failure
+    from nothing matching at all, and only the first is worth re-checking.
+    """
+    check = passage_check(
+        "the battery stores 5.12 kilowatt hours for the evening load",
+        source_with(page("The battery stores 9.99 kilowatt hours for the evening load.")),
+    )
+    assert check.state == "absent"
+    assert check.missing_figures == ("5.12",)
+    assert "5.12" in check.why()
 
 
 def test_a_page_too_thin_to_read_proves_nothing():

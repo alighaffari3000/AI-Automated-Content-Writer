@@ -77,6 +77,36 @@ def shingles(words: list[str], size: int = 5) -> set[str]:
 
 NUMBER = re.compile(r"\d[\d.,]*\d|\d")
 
+# Separators that sit between the digits of one number rather than between two
+# numbers. Persian and Arabic writing use their own, and a check that does not
+# fold them reads 5/12 as two numbers and then reports that the page never
+# stated 5.12 — which is the page being right and the check being wrong.
+NUMBER_SEPARATORS = {
+    "\u066b": ".",  # Arabic decimal separator
+    "\u066c": ",",  # Arabic thousands separator
+}
+# What a number may be written with, so that a figure and the word stuck to it
+# are read as one token and can be judged together.
+TOKEN = re.compile(r"[\w.,\-/]+", re.UNICODE)
+LETTER = re.compile(r"[^\W\d_]", re.UNICODE)
+# A digit with letters on both sides, which is how a part number reads and how
+# a measurement never does.
+INTERLEAVED = re.compile(r"\d[^\W\d_]+\d|[^\W\d_]\d+[^\W\d_]", re.UNICODE)
+
+
+def is_identifier(token: str) -> bool:
+    """Whether this is a name that happens to contain digits.
+
+    `SUN-6K-OG01LP1-EU-AM2` states no quantity: nothing on any page can confirm
+    the 01 in it, so a claim that named a model used to be unverifiable for as
+    long as it named one. Read narrowly — letters and digits joined by a hyphen,
+    or digits with letters on both sides — because 5kWh and 12V are figures a
+    page really can confirm, and dropping those would only move the blindness.
+    """
+    if not LETTER.search(token) or not any(c.isdigit() for c in token):
+        return False
+    return "-" in token or "_" in token or bool(INTERLEAVED.search(token))
+
 
 def numbers_in(text: str) -> set[str]:
     """Every number in the text, in one script and without its grouping.
@@ -85,13 +115,24 @@ def numbers_in(text: str) -> set[str]:
     to have been carried over wrongly, so they are compared separately from the
     words around them. Thousands separators go: a page writing 12,000 and a
     claim writing 12000 are stating the same figure.
+
+    Identifiers are dropped whole, and the same rules run over the claim and
+    over the page. A rule applied to one side only is how a passage that is
+    really on the page gets reported as absent from it.
     """
-    digits_only = (text or "").translate(str.maketrans(DIGITS))
+    folded = (text or "").translate(str.maketrans({**DIGITS, **NUMBER_SEPARATORS}))
     found = set()
-    for match in NUMBER.findall(digits_only):
-        cleaned = match.replace(",", "").rstrip(".")
-        if cleaned:
-            found.add(cleaned)
+    for token in TOKEN.findall(folded):
+        if is_identifier(token):
+            continue
+        # One slash between digits is a Persian decimal point; several are a
+        # date, and a date's parts are three numbers rather than one.
+        if token.count("/") == 1:
+            token = token.replace("/", ".")
+        for match in NUMBER.findall(token):
+            cleaned = match.replace(",", "").rstrip(".")
+            if cleaned:
+                found.add(cleaned)
     return found
 
 

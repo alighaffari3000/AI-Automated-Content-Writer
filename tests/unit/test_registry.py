@@ -253,3 +253,57 @@ def test_a_wrong_fact_can_be_forgotten(store):
     assert store.forget_fact(fact_id) is True
     assert store.live_facts(["something"]) == []
     assert store.forget_fact(fact_id) is False
+
+
+# ------------------------------------------- why a run had nothing to write
+
+
+def test_a_run_with_nothing_usable_says_why_it_stopped():
+    """The stop message has to carry the reason the audit already knows.
+
+    Without it, "no source solid enough" sends whoever reads it to the
+    database to find out whether the model invented its citations, the network
+    ate the pages, or a real passage went unrecognised.
+    """
+    from app.agent import diagnose_empty_registry
+    from app.schemas import Fact
+    from app.sources import SourceIndex
+
+    facts = [
+        Fact(
+            fact_id="FACT-001",
+            claim="the pack stores 5.12 kWh",
+            source="a vendor page",
+            evidence="the pack stores 5.12 kWh",
+            confidence="HIGH",
+            allowed=False,
+            audit_note=(
+                "the quoted passage was not found on the page it cites — "
+                "79% of its words are on the page; but it never states 5.12"
+            ),
+        ),
+        Fact(
+            fact_id="FACT-002",
+            claim="something else entirely",
+            source="a vendor page",
+            evidence="something else entirely",
+            confidence="HIGH",
+            allowed=False,
+            audit_note="cites no source",
+        ),
+    ]
+
+    diagnosis = diagnose_empty_registry(facts, SourceIndex())
+
+    assert "2 claim(s) registered, none usable" in diagnosis
+    assert "the quoted passage was not found on the page it cites" in diagnosis
+    assert "cites no source" in diagnosis
+    # The near miss is what says the sources were fine and the check was not.
+    assert "never states 5.12" in diagnosis
+
+
+def test_a_registry_that_registered_nothing_at_all_says_that_instead():
+    from app.agent import diagnose_empty_registry
+    from app.sources import SourceIndex
+
+    assert "no claims at all" in diagnose_empty_registry([], SourceIndex())
