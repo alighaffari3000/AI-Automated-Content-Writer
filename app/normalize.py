@@ -95,6 +95,31 @@ def numbers_in(text: str) -> set[str]:
     return found
 
 
+# An operation between two figures, written any of the ways this pipeline's
+# articles write one: a symbol, or the word for it. A bare hyphen and a slash
+# are deliberately not operators — "10-30%" is a range and "2026/09/11" is a
+# date, and counting either as arithmetic would make a page of prices look like
+# a worked example. The character classes after the two-word Persian operators
+# hold a literal zero-width non-joiner beside the space: "تقسیم‌بر" and
+# "تقسیم بر" are the same operator typed on different keyboards.
+OPERATOR = (
+    r"(?:[×x*÷+−]|ضربدر|تقسیم[\s‌]*بر|به[\s‌]*علاوه|منهای)"
+)
+ARITHMETIC = re.compile(r"\d[\d.,]*\s*" + OPERATOR + r"\s*\d[\d.,]*")
+
+
+def arithmetic_in(text: str) -> list[str]:
+    """Every place the text computes something, rather than just stating a figure.
+
+    The difference between an article that teaches and one that recites is
+    whether the numbers are ever combined. A figure can be copied from a
+    datasheet; an operation on two of them is the reader being shown how the
+    answer was reached — and that is measurable, so it is measured.
+    """
+    digits_only = (text or "").translate(str.maketrans(DIGITS))
+    return ARITHMETIC.findall(digits_only)
+
+
 def claim_key(claim: str) -> str:
     """The identity of a claim, for a registry that must not hold it twice.
 

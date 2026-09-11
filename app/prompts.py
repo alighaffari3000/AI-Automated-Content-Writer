@@ -11,6 +11,7 @@ state — nothing about a particular company belongs in this file.
 from __future__ import annotations
 
 from .config import ContentConfig, ImageConfig, SeoConfig
+from .normalize import numbers_in
 
 SCORING_RULE = """
 Score 0-10, and calibrate. A competent, publishable draft with nothing seriously
@@ -45,36 +46,57 @@ def format_known_facts(rows: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def format_rejected_facts(facts: list) -> str:
-    """What the audit threw out last time, in its own words.
+def format_rejected_facts(facts: list, min_numeric: int = 0) -> str:
+    """What went wrong with the last research pass, in the audit's own words.
 
     A retry told only "that produced nothing usable" runs the same search again
     and fails the same way. The audit knows more than that: which passage was
     looked for, which page it was not on, and why that page could not carry the
     claim. Handing those three back is the difference between a second attempt
     and a second identical attempt.
+
+    `min_numeric` is the other way a pass falls short: everything survived, and
+    none of it is a number. That is reported separately, because the fix is
+    different — not better citations, but different facts.
     """
-    lines = []
+    rejected = []
     for fact in facts:
         if getattr(fact, "allowed", False):
             continue
-        lines.append(
+        rejected.append(
             f"- {fact.claim}\n"
             f"    quoted as: {fact.evidence}\n"
             f"    cited to: {fact.source_url or '(no reachable source)'}\n"
             f"    thrown out because "
             f"{fact.audit_note or 'the audit could not accept it'}"
         )
-    if not lines:
+
+    sections = []
+    if rejected:
+        sections.append("Thrown out by the source audit:\n" + "\n".join(rejected))
+    elif not facts:
         # Nothing was registered at all, so there is no verdict to hand back.
         # Saying which of the two happened still tells the next attempt where
         # it went wrong: the notes carried no checkable claim, not the sources.
-        return (
-            "(the last attempt registered no checkable claim at all — the notes "
-            "came back as explanation rather than as figures a reader could "
-            "check)"
+        sections.append(
+            "The last attempt registered no checkable claim at all — the notes "
+            "came back as explanation rather than as figures a reader could check."
         )
-    return "\n".join(lines)
+
+    if min_numeric:
+        kept = [f for f in facts if getattr(f, "allowed", False)]
+        numeric = [f for f in kept if numbers_in(f.claim)]
+        if len(numeric) < min_numeric:
+            prose = [f"- {f.claim}" for f in kept if f not in numeric]
+            sections.append(
+                f"Of the {len(kept)} fact(s) that survived, only {len(numeric)} "
+                f"carry a figure; the article needs at least {min_numeric} to "
+                "calculate anything. These survived but are prose, not numbers "
+                "— true, checkable, and useless for a worked example:\n"
+                + ("\n".join(prose) if prose else "(none)")
+            )
+
+    return "\n\n".join(sections)
 
 
 RETRY_RULE = """
@@ -92,6 +114,14 @@ that states the figure in so many words and copy that sentence across
 character for character, and search for sources the last attempt never opened
 rather than hanging more claims on the same two pages. A claim you cannot find
 stated anywhere is one to drop and replace, not one to cite more confidently.
+
+"Only N carry a figure" is the other failure, and the opposite fix: the sources
+were fine and the facts were true, and none of them was a number the article
+could compute with. Do not re-cite those. Go back to the shopping list — what
+this article's worked example has to calculate — and fetch its inputs: the
+rating, the capacity, the coefficient, the consumption figure, each from a page
+that states it as a number. A datasheet table is worth more here than any
+explanatory paragraph.
 """.strip()
 
 

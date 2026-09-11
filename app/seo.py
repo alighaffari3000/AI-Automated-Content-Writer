@@ -23,7 +23,7 @@ from urllib.parse import urlsplit
 
 from .config import SeoConfig
 from .images import IMAGE_MARKER
-from .normalize import normalize_text
+from .normalize import arithmetic_in, normalize_text, numbers_in
 from .schemas import ArticleDraft, ReviewIssue, Severity
 
 # A heading line, with the closing hashes some writers add stripped off.
@@ -589,6 +589,39 @@ def _keyword_defects(
     return found
 
 
+def _calculation_defects(draft: ArticleDraft) -> list[ReviewIssue]:
+    """Whether the article ever does arithmetic, or only quotes figures.
+
+    Six of the first eight articles this pipeline published contained no
+    calculation at all — one of them titled "a step-by-step guide to
+    calculating battery capacity". The editorial reviewer noticed once, and
+    rated it minor. This is counted instead of judged, and it is major, because
+    an article that promises to show the reader how to size something and then
+    does not is the one defect on this site a reader came specifically to avoid.
+    """
+    if arithmetic_in(draft.body):
+        return []
+    figures = len(numbers_in(draft.body))
+    stated = (
+        f"The body states {figures} figure(s) but never combines any two of them"
+        if figures
+        else "The body contains no figures at all"
+    )
+    return [
+        _issue(
+            "CALC-MISSING",
+            "major",
+            "body",
+            f"{stated}: there is no `a × b = c`, no division, no sum — nothing "
+            "a reader could follow to reach the answer themselves.",
+            "Add a worked example that computes this article's own question from "
+            "the registered figures, one operation per line, with the result of "
+            "each step written out. If the registry holds no figures that would "
+            "let you compute it, say so in the summary rather than writing around it.",
+        )
+    ]
+
+
 def defects(
     draft: ArticleDraft,
     index: SiteIndex,
@@ -603,6 +636,7 @@ def defects(
     return [
         *_listing_defects(draft, config),
         *_structure_defects(draft),
+        *_calculation_defects(draft),
         *_image_defects(draft, config),
         *_slug_defects(draft, index),
         *_link_defects(draft, index),

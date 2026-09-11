@@ -47,7 +47,8 @@ how much of the battery you may actually take out.
 
 ## What that means when you buy
 
-Take the overnight figure and divide it by usable depth of discharge.
+Take the overnight figure and divide it by usable depth of discharge: for
+8 kWh overnight at 80% usable, 8 ÷ 0.8 = 10 kWh of battery.
 """
 
 

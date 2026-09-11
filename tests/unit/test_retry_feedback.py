@@ -120,3 +120,94 @@ def test_the_second_empty_registry_stops_rather_than_looping(monkeypatch):
     """A subject the open web does not document still has to end the run."""
     event = empty_registry_run(monkeypatch, attempt=1)
     assert event.actions.route == "no_facts"
+
+
+# ------------------------------------------------ a registry with no numbers
+
+
+def threshold(monkeypatch, n: int) -> None:
+    """Settings are frozen, so the whole tree is swapped rather than one field."""
+    from dataclasses import replace
+
+    from app import agent
+
+    monkeypatch.setattr(
+        agent,
+        "settings",
+        replace(agent.settings, content=replace(agent.settings.content, min_numeric_facts=n)),
+    )
+
+
+def numeric_shortfall_run(monkeypatch, attempt: int, claims: list[str]):
+    """One audit that accepts everything, over facts with the given claims."""
+    from app import agent
+
+    monkeypatch.setattr(agent, "fetch_pages", lambda *a, **k: None)
+    monkeypatch.setattr(agent, "remember", lambda *a, **k: None)
+    monkeypatch.setattr(agent, "audit_fact", lambda *a, **k: FactAudit("HIGH", True))
+    threshold(monkeypatch, 3)
+    facts = [
+        rejected(fact_id=f"FACT-{n:03d}", claim=c, allowed=True).model_dump()
+        for n, c in enumerate(claims, start=1)
+    ]
+    ctx = FakeContext(
+        research_bundle={"angle": "a", "outline": ["one"], "facts": facts},
+        source_index=[],
+        article_id=0,
+        research_attempt=attempt,
+    )
+    return agent.persist_registry(ctx, None)
+
+
+PROSE = [
+    "LFP tolerates deep discharge well.",
+    "Lead-acid ages quickly when discharged deeply.",
+    "Depth of discharge decides usable capacity.",
+]
+FIGURES = [
+    "LFP supports 80% to 100% depth of discharge.",
+    "Lead-acid is limited to about 50% depth of discharge.",
+    "A 5 kWh battery at 80% yields 4 kWh usable.",
+]
+
+
+def test_a_registry_of_prose_goes_back_to_research(monkeypatch):
+    """The failure behind six of the first eight articles: every fact true,
+    none of them a number, and a sizing guide with no arithmetic in it."""
+    event = numeric_shortfall_run(monkeypatch, attempt=0, claims=PROSE)
+    assert event.actions.route == "retry"
+    fed_back = event.actions.state_delta["rejected_facts"]
+    assert "only 0 carry a figure" in fed_back
+    assert "LFP tolerates deep discharge well." in fed_back
+
+
+def test_enough_figures_goes_straight_to_the_writer(monkeypatch):
+    event = numeric_shortfall_run(monkeypatch, attempt=0, claims=FIGURES)
+    assert event.actions.route == "ok"
+
+
+def test_short_on_numbers_twice_writes_anyway(monkeypatch):
+    """Unlike an empty registry, a thin one is worth an article: the gate
+    counts the missing arithmetic and a person sees it marked."""
+    event = numeric_shortfall_run(monkeypatch, attempt=1, claims=PROSE)
+    assert event.actions.route == "ok"
+
+
+def test_the_threshold_can_be_switched_off(monkeypatch):
+    from app import agent
+
+    event = numeric_shortfall_run(monkeypatch, attempt=0, claims=PROSE)
+    assert event.actions.route == "retry"
+    threshold(monkeypatch, 0)
+    monkeypatch.setattr(agent, "audit_fact", lambda *a, **k: FactAudit("HIGH", True))
+    ctx = FakeContext(
+        research_bundle={
+            "angle": "a",
+            "outline": ["one"],
+            "facts": [rejected(claim=PROSE[0], allowed=True).model_dump()],
+        },
+        source_index=[],
+        article_id=0,
+        research_attempt=0,
+    )
+    assert agent.persist_registry(ctx, None).actions.route == "ok"
