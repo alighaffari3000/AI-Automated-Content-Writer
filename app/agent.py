@@ -235,6 +235,13 @@ def load_run_context(ctx: Context, node_input: Any) -> Event:
 # publish something competing with what is already there.
 MAX_TOPIC_ATTEMPTS = 2
 
+# One retry here too, for the same reason and with the same limit. A research
+# pass whose every fact fails the audit is told exactly what failed and sent
+# back; a second pass that still finds nothing it can quote is describing a
+# subject the open web does not actually document, and writing it anyway is
+# what the fact registry exists to prevent.
+MAX_RESEARCH_ATTEMPTS = 2
+
 
 def cannibalises(keywords: list[str], claimed: dict[str, str]) -> str:
     """Whether this subject would compete with one already published.
@@ -464,6 +471,30 @@ def persist_registry(ctx: Context, node_input: Any) -> Event:
         downgraded,
     )
     if not allowed:
+        # An empty registry is almost never a subject with nothing written
+        # about it. It is one research pass that quoted from memory, or hung
+        # every claim on whichever source was nearest — and the audit, which
+        # cannot tell those apart from a genuinely barren subject, throws the
+        # lot out. So the run asks again before giving up, and hands the
+        # second attempt the audit's own verdict on the first: which passage
+        # was looked for, on which page, and why it did not count. That is
+        # feedback no general instruction can substitute for, and it costs one
+        # more search on exactly the runs that would otherwise publish nothing.
+        attempt = int(ctx.state.get("research_attempt", 0)) + 1
+        if attempt < MAX_RESEARCH_ATTEMPTS:
+            logger.warning(
+                "No fact survived the audit (attempt %s of %s); researching again.",
+                attempt,
+                MAX_RESEARCH_ATTEMPTS,
+            )
+            return Event(
+                output={"status": "retry", "attempt": attempt},
+                route="retry",
+                state={
+                    "research_attempt": attempt,
+                    "rejected_facts": prompts.format_rejected_facts(bundle.facts),
+                },
+            )
         return Event(
             output={"status": "no_facts"},
             route="no_facts",
@@ -996,7 +1027,10 @@ def build_pipeline() -> Workflow:
             ),
             (researcher, fact_builder),
             (fact_builder, persist_registry),
-            (persist_registry, {"ok": writer, "no_facts": abort_run}),
+            (
+                persist_registry,
+                {"ok": writer, "retry": researcher, "no_facts": abort_run},
+            ),
             (writer, (technical, product, editorial)),
             ((technical, product, editorial), join_reviews),
             (join_reviews, evaluate_gate),
