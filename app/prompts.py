@@ -45,6 +45,56 @@ def format_known_facts(rows: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def format_rejected_facts(facts: list) -> str:
+    """What the audit threw out last time, in its own words.
+
+    A retry told only "that produced nothing usable" runs the same search again
+    and fails the same way. The audit knows more than that: which passage was
+    looked for, which page it was not on, and why that page could not carry the
+    claim. Handing those three back is the difference between a second attempt
+    and a second identical attempt.
+    """
+    lines = []
+    for fact in facts:
+        if getattr(fact, "allowed", False):
+            continue
+        lines.append(
+            f"- {fact.claim}\n"
+            f"    quoted as: {fact.evidence}\n"
+            f"    cited to: {fact.source_url or '(no reachable source)'}\n"
+            f"    thrown out because "
+            f"{fact.audit_note or 'the audit could not accept it'}"
+        )
+    if not lines:
+        # Nothing was registered at all, so there is no verdict to hand back.
+        # Saying which of the two happened still tells the next attempt where
+        # it went wrong: the notes carried no checkable claim, not the sources.
+        return (
+            "(the last attempt registered no checkable claim at all — the notes "
+            "came back as explanation rather than as figures a reader could "
+            "check)"
+        )
+    return "\n".join(lines)
+
+
+RETRY_RULE = """
+Facts from an earlier attempt at this same article that the audit threw out. If
+anything appears here, that attempt registered nothing the writer could use and
+this is the second and final attempt:
+{rejected_facts?}
+
+Read what each one was rejected for before searching again. "The quoted passage
+was not found on the page it cites" is not a verdict on whether the claim is
+true — it means the passage was written from memory rather than copied, or
+tidied until it no longer matched the page, or attached to whichever source was
+nearest instead of the one that actually states it. So this time: find the page
+that states the figure in so many words and copy that sentence across
+character for character, and search for sources the last attempt never opened
+rather than hanging more claims on the same two pages. A claim you cannot find
+stated anywhere is one to drop and replace, not one to cite more confidently.
+""".strip()
+
+
 REGISTRY_RULE = """
 Facts already verified, still inside their shelf life, and citable by their
 reg-N id exactly as a search result is citable by its src-N id:
@@ -147,6 +197,8 @@ Context from the site you are writing for:
 
 {REGISTRY_RULE}
 
+{RETRY_RULE}
+
 Use web search to gather what an accurate article needs, starting from what the
 registry does not already cover. For every checkable claim, record: the claim
 itself, who published it, the exact passage that supports it, and how strongly
@@ -218,6 +270,8 @@ publishing. Leave source_url empty — it is filled in from the real list.
 {FACT_RULE}
 
 {REGISTRY_RULE}
+
+{RETRY_RULE}
 
 To reuse one, register it with its claim unchanged and cite its reg-N id. It
 needs no other source.

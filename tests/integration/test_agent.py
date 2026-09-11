@@ -100,3 +100,19 @@ def test_nothing_reaches_the_site_without_passing_the_gate():
         if edge.to_node.name == "finalize"
     }
     assert inbound == {"evaluate_gate"}
+
+
+def test_an_empty_registry_researches_again_before_it_gives_up():
+    """The failure this guards: one research pass whose every fact fails the
+    audit used to end the run outright, and the audit cannot tell a subject
+    nothing is written about from a pass that quoted from memory."""
+    routes = {
+        edge.route: edge.to_node.name
+        for edge in root_agent.graph.edges
+        if edge.from_node.name == "persist_registry"
+    }
+    assert routes == {
+        "ok": "writer",
+        "retry": "researcher",
+        "no_facts": "abort_run",
+    }
