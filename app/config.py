@@ -134,6 +134,14 @@ class ContentConfig:
     )
     min_words: int = field(default_factory=lambda: _env_int("CONTENT_MIN_WORDS", 700))
     max_words: int = field(default_factory=lambda: _env_int("CONTENT_MAX_WORDS", 1200))
+    # How many of the facts research brings back must carry a figure before
+    # the writer is allowed to start. The writer may only calculate with
+    # registered numbers, so a registry of prose produces an article of prose
+    # whatever the prompt says — this is the check that no instruction to
+    # "hunt numbers" can replace. Zero switches it off.
+    min_numeric_facts: int = field(
+        default_factory=lambda: _env_int("CONTENT_MIN_NUMERIC_FACTS", 3)
+    )
     # The site's point of view. Content marketing is allowed to advocate — what
     # it cannot do is contradict its own sources, because a reader who follows
     # bad advice and gets burned is a customer lost for good.

@@ -41,7 +41,7 @@ from . import prompts, seo, structured_data
 from .config import settings
 from .images import ImageGenerator, ImageRequest, find_markers, replace_markers
 from .notify import build_notifier
-from .normalize import claim_key
+from .normalize import claim_key, numbers_in
 from .sources import (
     SourceIndex,
     audit_fact,
@@ -470,20 +470,31 @@ def persist_registry(ctx: Context, node_input: Any) -> Event:
         sum(1 for f in allowed if f.verified),
         downgraded,
     )
-    if not allowed:
-        # An empty registry is almost never a subject with nothing written
-        # about it. It is one research pass that quoted from memory, or hung
-        # every claim on whichever source was nearest — and the audit, which
-        # cannot tell those apart from a genuinely barren subject, throws the
-        # lot out. So the run asks again before giving up, and hands the
-        # second attempt the audit's own verdict on the first: which passage
-        # was looked for, on which page, and why it did not count. That is
-        # feedback no general instruction can substitute for, and it costs one
-        # more search on exactly the runs that would otherwise publish nothing.
+    # Two ways a research pass falls short, and one answer to both: ask again,
+    # once, with the specific shortfall in hand.
+    #
+    # An empty registry is almost never a subject with nothing written about
+    # it. It is one pass that quoted from memory, or hung every claim on
+    # whichever source was nearest — and the audit, which cannot tell those
+    # apart from a genuinely barren subject, throws the lot out.
+    #
+    # A registry of prose is the quieter failure. Everything survives, all of
+    # it true, none of it a number — and the writer, who may only calculate
+    # with registered figures, produces a "step-by-step sizing guide" with no
+    # arithmetic in it. Six of the first eight articles shipped that way. No
+    # instruction to the writer can fix it, because the writer is not where
+    # the number went missing.
+    min_numeric = settings.content.min_numeric_facts
+    numeric = [f for f in allowed if numbers_in(f.claim)]
+    too_few_numbers = bool(min_numeric) and len(numeric) < min_numeric
+    if not allowed or too_few_numbers:
         attempt = int(ctx.state.get("research_attempt", 0)) + 1
         if attempt < MAX_RESEARCH_ATTEMPTS:
             logger.warning(
-                "No fact survived the audit (attempt %s of %s); researching again.",
+                "%s (attempt %s of %s); researching again.",
+                "No fact survived the audit"
+                if not allowed
+                else f"Only {len(numeric)} of {len(allowed)} usable fact(s) carry a figure",
                 attempt,
                 MAX_RESEARCH_ATTEMPTS,
             )
@@ -492,9 +503,21 @@ def persist_registry(ctx: Context, node_input: Any) -> Event:
                 route="retry",
                 state={
                     "research_attempt": attempt,
-                    "rejected_facts": prompts.format_rejected_facts(bundle.facts),
+                    "rejected_facts": prompts.format_rejected_facts(
+                        bundle.facts, min_numeric=min_numeric
+                    ),
                 },
             )
+        if allowed:
+            # Short on numbers twice over: write anyway. The gate will count
+            # the missing arithmetic and the draft reaches a person marked
+            # with it, which is worth more than a research bill and nothing.
+            logger.warning(
+                "Still only %s numeric fact(s) after %s attempts; writing with what there is.",
+                len(numeric),
+                attempt,
+            )
+    if not allowed:
         return Event(
             output={"status": "no_facts"},
             route="no_facts",
