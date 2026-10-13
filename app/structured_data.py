@@ -76,10 +76,14 @@ def faq_pairs(body: str) -> list[tuple[str, str]]:
             continue
         following = structure[position + 1 :]
         end = following[0].line - 1 if following else len(lines)
+        # Table rows are left out: read aloud they are pipes and dashes, and
+        # the prose around a table is what answers the question.
         answer_lines = [
             line
             for line in lines[heading.line : end]
-            if line.strip() and not HEADING_LINE.match(line)
+            if line.strip()
+            and not HEADING_LINE.match(line)
+            and not line.lstrip().startswith("|")
         ]
         answer = _clean(" ".join(answer_lines))
         if answer:

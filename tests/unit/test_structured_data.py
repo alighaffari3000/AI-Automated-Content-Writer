@@ -109,6 +109,15 @@ def test_link_and_image_syntax_is_stripped_out_of_an_answer():
     assert "همیشه" in answer
 
 
+def test_a_table_under_a_question_is_not_read_into_the_answer():
+    body = (
+        "## چرا؟\n\nجواب کوتاه.\n\n"  # noqa: RUF001
+        "| گزینه | مقدار |\n|---|---|\n| الف | ۱ |\n\n"  # noqa: RUF001
+        "## چطور؟\n\nپاسخ دوم.\n"  # noqa: RUF001
+    )
+    assert faq_pairs(body)[0][1] == "جواب کوتاه."
+
+
 def test_one_question_is_not_an_faq():
     body = "## آیا این یک سوال است؟\n\nبله.\n\n## یک بخش عادی\n\nمتن.\n"  # noqa: RUF001
     assert "FAQPage" not in types_of(blocks(body=body))

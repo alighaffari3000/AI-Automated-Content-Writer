@@ -7,11 +7,12 @@ This is that someone.
 
 from __future__ import annotations
 
-from app.normalize import arithmetic_in
-from app.seo import defects
 # By basename, the way pytest itself imports this directory: "tests.unit" breaks
 # on any machine where some installed package ships a top-level `tests`.
 from test_seo import CONFIG, INDEX, draft
+
+from app.normalize import arithmetic_in
+from app.seo import defects
 
 
 def test_an_operation_between_two_figures_counts():
