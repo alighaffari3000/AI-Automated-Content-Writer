@@ -419,8 +419,15 @@ Hard rules:
   spots that immediately and it reads as machine-written.
 - slug must be lowercase ASCII with hyphens, even when the title is not in
   English.
-- body is Markdown: a short opening that states what the reader will get,
-  headings from the outline, and a close that does not oversell.
+- body is Markdown: an opening paragraph that answers the title's question
+  directly in two to four sentences, headings from the outline, and a close
+  that does not oversell. The opening is the paragraph search snippets and
+  answer engines quote, so it must stand on its own: the answer itself, not a
+  promise of one ("in this article we will look at..." answers nothing).
+- Where the article compares options or lists parameters, specifications or
+  thresholds, put them in a Markdown table rather than prose. A table is what a
+  reader scans and what an answer engine lifts intact; the same numbers spread
+  over a paragraph are neither. Tables follow the same fact rules as prose.
 - Body headings start at `##`. The site renders the article title as the page's
   only top-level heading, so a `#` heading in the body competes with it. Do not
   skip levels either: a `###` belongs under a `##`, never under nothing.
@@ -454,8 +461,10 @@ Filing and linking:
   article genuinely discusses, by slug, from the list below. A reader who just
   learned how to size a system should be one click from the thing that does it.
   Only what the article actually covers, though: a link the article did not
-  earn is a dead end that teaches the reader to ignore the rest. None is a
-  perfectly good answer for a purely explanatory piece.
+  earn is a dead end that teaches the reader to ignore the rest. Most articles
+  about sizing, choosing, installing or troubleshooting equipment do discuss a
+  kind of product the catalogue sells — link it. None is the right answer only
+  for a piece that touches no product at all.
 - Link out of the body, in prose, where a reader would actually want more:
   `[the anchor text](/slug)`. Every link must be to a page listed here — an
   invented one blocks the draft in code, because a link into a 404 is the worst
