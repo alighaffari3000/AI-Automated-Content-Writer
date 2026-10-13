@@ -159,8 +159,13 @@ def test_an_aggregator_never_outranks_a_manufacturer():
 
 def test_a_manufacturer_nobody_configured_is_only_the_general_web():
     """The lists are per-site on purpose: this module cannot know the industry."""
-    assert classify_domain("deye.com")[0] == 1
-    assert classify_domain("mit.edu")[0] == 4, "but a university is one anywhere"
+    # Spelled out rather than the default, which reads the machine's .env — on
+    # a configured server deye.com *is* a manufacturer, and this would fail.
+    unconfigured = authority_from(
+        SourceConfig(manufacturers=(), publications=(), standards=(), academic=(), weak_domains=())
+    )
+    assert classify_domain("deye.com", unconfigured)[0] == 1
+    assert classify_domain("mit.edu", unconfigured)[0] == 4, "but a university is one anywhere"
 
 
 # ------------------------------------------------------------ reading a page
