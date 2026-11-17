@@ -246,16 +246,37 @@ MAX_RESEARCH_ATTEMPTS = 2
 def cannibalises(keywords: list[str], claimed: dict[str, str]) -> str:
     """Whether this subject would compete with one already published.
 
-    Only when *every* query it targets is already spoken for. Sharing one broad
-    keyword is normal and healthy — two articles about batteries both mention
-    batteries. Sharing all of them means the same searcher is being answered
+    When its primary keyword (the first) is already spoken for, or more than
+    half of its keywords are. Sharing one secondary keyword is normal and
+    healthy — two articles about batteries both mention batteries. Sharing the
+    main query, or most of them, means the same searcher is being answered
     twice, and the two pieces split the ranking between them.
+
+    A keyword is spoken for when an earlier one is the same query with words
+    added or dropped: "voltage drop dc cable" and "calculate voltage drop dc
+    cable" are one searcher. Requiring an exact match on every keyword let the
+    same calculation through four times, reworded each time.
     """
     keys = [claim_key(k) for k in keywords if claim_key(k)]
     if not keys:
         return ""
-    owners = [claimed.get(key, "") for key in keys]
-    return owners[0] if all(owners) else ""
+    taken = [(set(key.split()), owner) for key, owner in claimed.items()]
+
+    def owner_of(key: str) -> str:
+        if key in claimed:
+            return claimed[key]
+        words = set(key.split())
+        if len(words) < 3:  # two-word phrases are too broad to call a rewording
+            return ""
+        return next(
+            (o for w, o in taken if len(w) >= 3 and (words <= w or w <= words)), ""
+        )
+
+    owners = [owner_of(key) for key in keys]
+    if owners[0]:
+        return owners[0]
+    hits = [o for o in owners if o]
+    return hits[0] if len(hits) * 2 > len(owners) else ""
 
 
 def open_article(ctx: Context, node_input: Any) -> Event:
@@ -283,7 +304,7 @@ def open_article(ctx: Context, node_input: Any) -> Event:
     competing = cannibalises(proposed, store.claimed_keywords())
     if competing:
         rejected = str(ctx.state.get("rejected_subjects") or "")
-        note = f"{title} — every query it targets already belongs to {competing!r}"
+        note = f"{title} — its main queries already belong to {competing!r}"
         logger.info("Subject rejected as a duplicate (attempt %s): %s", attempt, note)
         if attempt >= MAX_TOPIC_ATTEMPTS:
             return Event(
@@ -906,8 +927,12 @@ def abort_run(ctx: Context, node_input: dict[str, Any]) -> Event:
     topic_id = int(ctx.state.get("topic_id", 0))
     if article_id:
         get_store().fail_article(article_id, reason)
+    # No subject means the turn was never claimed, so there is nothing to give
+    # back. Spend it instead, or a written-out category comes up every run.
+    if category_id and status == "no_topic":
+        get_store().mark_category_used(category_id)
     # Give the turn back, so a failed run does not cost this category its slot.
-    if category_id and status != "no_category":
+    elif category_id and status != "no_category":
         get_store().release_category(category_id)
     # And un-log the subject: nothing was published, so the planner must stay
     # free to propose it again.

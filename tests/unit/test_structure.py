@@ -38,7 +38,56 @@ def test_sharing_one_broad_keyword_is_normal(store):
     """Two articles about batteries both mention batteries."""
     covered(store, "Sizing a home battery", "battery sizing, usable capacity")
     assert not cannibalises(
-        ["battery sizing", "cold weather performance"], store.claimed_keywords()
+        ["cold weather performance", "battery sizing"], store.claimed_keywords()
+    )
+
+
+def test_a_subject_whose_main_query_is_taken_is_refused(store):
+    """The second article on panels-per-string led with the first one's query."""
+    covered(
+        store,
+        "Reading MPPT limits in an inverter datasheet",
+        "mppt voltage range, panels per string hybrid inverter",
+    )
+    assert cannibalises(
+        ["panels per string hybrid inverter", "voc temperature coefficient"],
+        store.claimed_keywords(),
+    ) == "Reading MPPT limits in an inverter datasheet"
+
+
+def test_the_same_calculation_reworded_is_refused(store):
+    """DC cable sizing went out four times, each with its keywords reworded."""
+    covered(
+        store,
+        "Sizing DC cable for a hybrid inverter",
+        "calculate voltage drop dc solar cable, dc string cable cross section",
+    )
+    covered(store, "Choosing DC breakers", "dc breaker current rating inverter")
+    assert cannibalises(
+        [
+            "residential dc wiring and protection",
+            "voltage drop dc solar cable",  # the same query, one word dropped
+            "dc string cable cross section home",  # the same query, one added
+            "dc breaker current rating inverter",
+        ],
+        store.claimed_keywords(),
+    )
+
+
+def test_half_the_queries_taken_is_still_room_for_a_new_article(store):
+    covered(store, "Sizing DC cable", "voltage drop dc solar cable")
+    assert not cannibalises(
+        ["dc cable lug crimping tools", "voltage drop dc solar cable"],
+        store.claimed_keywords(),
+    )
+
+
+def test_a_short_phrase_inside_a_longer_one_is_not_a_rewording(store):
+    """Two words are a topic, not a query; "dc cable" is in every cable article."""
+    covered(store, "Sizing DC cable", "dc cable")
+    assert not cannibalises(
+        ["ac cable sizing three phase", "dc cable sizing for ac loads"],
+        store.claimed_keywords(),
     )
 
 

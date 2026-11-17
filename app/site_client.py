@@ -71,7 +71,9 @@ class SiteClient:
             payload = payload.get("products") or payload.get("items") or []
         return payload if isinstance(payload, list) else []
 
-    def published_articles(self, limit: int = 30) -> list[dict[str, Any]]:
+    # The planner checks new subjects against this list; at 30 it stopped
+    # seeing a site's older articles and proposed them again.
+    def published_articles(self, limit: int = 200) -> list[dict[str, Any]]:
         payload = self._get("/articles", {"limit": limit})
         if isinstance(payload, dict):
             payload = payload.get("articles") or payload.get("items") or []

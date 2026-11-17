@@ -102,9 +102,12 @@ contradictions, so the next round fixes named issues instead of rewriting the
 article from scratch.
 
 **Articles are a section, not a pile.** The planner sees every keyword an
-existing article already took, and a subject whose every query is spoken for is
-refused in code — two articles competing for one search split the ranking
-between them. Each category can name a pillar article the narrower pieces link
+existing article already took, and a subject whose main query, or more than
+half of its queries, is spoken for (counting rewordings that only add or drop a
+word) is refused in code — two articles competing for one search split the
+ranking between them. Categories rotate fewest-articles-first, scaled by a
+weight a person sets from what actually brings readers
+(`categories weight <id> 2` writes that area twice as often). Each category can name a pillar article the narrower pieces link
 back to (`categories pillar <id> <slug>`), and pages nothing currently links to
 are handed to the writer as preferred link targets, so orphans get fixed as a
 side effect of writing the next piece.

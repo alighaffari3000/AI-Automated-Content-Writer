@@ -31,7 +31,8 @@ class TopicProposal(BaseModel):
         description="What this article argues or answers that a general piece would not."
     )
     keywords: list[str] = Field(
-        default_factory=list, description="Search terms this article should answer."
+        default_factory=list,
+        description="Search terms this article should answer, the main one first.",
     )
     why_now: str = Field(
         default="",

@@ -39,6 +39,9 @@ CREATE TABLE IF NOT EXISTS categories (
     -- entitled to decide what a site's main page on a subject is.
     pillar_slug   TEXT    NOT NULL DEFAULT '',
     status        TEXT    NOT NULL DEFAULT 'active',
+    -- This area's share of the articles, relative to the others: 2 is written
+    -- twice as often as 1. Set by a person, from what actually brings readers.
+    weight        REAL    NOT NULL DEFAULT 1,
     times_used    INTEGER NOT NULL DEFAULT 0,
     created_at    TEXT    NOT NULL,
     used_at       TEXT
@@ -206,6 +209,10 @@ class Store:
             conn.execute(
                 "ALTER TABLE categories ADD COLUMN pillar_slug TEXT NOT NULL DEFAULT ''"
             )
+        if "weight" not in category_columns:
+            conn.execute(
+                "ALTER TABLE categories ADD COLUMN weight REAL NOT NULL DEFAULT 1"
+            )
         conn.execute(
             "UPDATE topics SET status = 'active' WHERE status IN ('queued', 'used')"
         )
@@ -257,15 +264,18 @@ class Store:
     def next_category(self) -> dict[str, Any] | None:
         """Whose turn it is today.
 
-        Fewest-articles-written first, so coverage stays even across every
-        subject area rather than drifting toward whichever one happens to
-        produce topics easily. Ordering by timestamp alone would not hold —
-        two runs in the same second tie, and rotation sticks on one row.
+        Fewest-articles-written first, scaled by weight, so coverage stays at
+        the share a person chose rather than drifting toward whichever area
+        happens to produce topics easily. An area whose weight is raised is
+        written until it catches up with its new share. Ordering by timestamp
+        alone would not hold — two runs in the same second tie, and rotation
+        sticks on one row.
         """
         with self._connect() as conn:
             row = conn.execute(
                 "SELECT * FROM categories WHERE status <> 'paused'"
-                " ORDER BY times_used ASC, used_at IS NOT NULL, used_at ASC, id ASC"
+                " ORDER BY times_used / weight ASC,"
+                " used_at IS NOT NULL, used_at ASC, id ASC"
                 " LIMIT 1"
             ).fetchone()
             return dict(row) if row else None

@@ -245,7 +245,7 @@ def cmd_categories_list(args: argparse.Namespace) -> int:
             "SELECT c.*, (SELECT COUNT(*) FROM topics t WHERE t.category_id = c.id)"
             "        AS topic_count"
             " FROM categories c"
-            " ORDER BY c.status = 'paused', c.times_used ASC,"
+            " ORDER BY c.status = 'paused', c.times_used / c.weight ASC,"
             "          c.used_at IS NOT NULL, c.used_at ASC, c.id ASC"
         ).fetchall()
     if not rows:
@@ -262,7 +262,7 @@ def cmd_categories_list(args: argparse.Namespace) -> int:
         last = (row["used_at"] or "never")[:10]
         print(
             f"{marker} #{row['id']:<3} {row['status']:<7} written {row['times_used']:<3} "
-            f"last {last:<11} {row['name']}"
+            f"weight {row['weight']:<4g} last {last:<11} {row['name']}"
         )
         if row["description"]:
             print(f"       {row['description'][:88]}")
@@ -295,6 +295,22 @@ def cmd_categories_pause(args: argparse.Namespace) -> int:
         print(f"No category with id {args.id}.")
         return 1
     print(f"category #{args.id} is now {status}")
+    return 0
+
+
+def cmd_categories_weight(args: argparse.Namespace) -> int:
+    """Give an area a larger or smaller share of the articles."""
+    if args.weight <= 0:
+        print("A weight must be above 0; to stop an area, pause it.")
+        return 1
+    with get_store()._connect() as conn:  # noqa: SLF001
+        changed = conn.execute(
+            "UPDATE categories SET weight = ? WHERE id = ?", (args.weight, args.id)
+        ).rowcount
+    if not changed:
+        print(f"No category with id {args.id}.")
+        return 1
+    print(f"category #{args.id} now has weight {args.weight:g}")
     return 0
 
 
@@ -447,6 +463,15 @@ def main(argv: list[str] | None = None) -> int:
     pause.add_argument("id", type=int)
     pause.add_argument("--resume", action="store_true", help="put it back in rotation")
     pause.set_defaults(func=cmd_categories_pause)
+
+    weight = cats_sub.add_parser(
+        "weight",
+        help="set an area's share of the articles (2 = twice as often as 1)",
+        parents=[common],
+    )
+    weight.add_argument("id", type=int)
+    weight.add_argument("weight", type=float)
+    weight.set_defaults(func=cmd_categories_weight)
 
     evaluate = sub.add_parser(
         "eval",

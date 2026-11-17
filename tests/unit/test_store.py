@@ -29,6 +29,20 @@ def test_coverage_stays_even_across_subject_areas(store):
     assert order == ids + ids, "every area is written once before any is written twice"
 
 
+def test_a_weighted_area_gets_its_share(store):
+    heavy = store.add_category("Heavy")
+    light = store.add_category("Light")
+    with store._connect() as conn:  # noqa: SLF001
+        conn.execute("UPDATE categories SET weight = 2 WHERE id = ?", (heavy,))
+    order = []
+    for _ in range(6):
+        category = store.next_category()
+        order.append(category["id"])
+        store.mark_category_used(category["id"])
+
+    assert order.count(heavy) == 4 and order.count(light) == 2
+
+
 def test_a_category_is_never_consumed(store):
     only = store.add_category("The only area")
     for _ in range(3):

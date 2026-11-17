@@ -186,10 +186,12 @@ Propose one subject inside this category. Judge it against three things:
    contain this subject or a near-restatement of it. If the obvious subjects
    are taken, go narrower — a sub-question, a specific decision, a case the
    earlier pieces skipped — rather than rewording something already there.
-   At least one of your keywords must be a search this site does not already
-   answer: a subject whose every query is spoken for is refused in code, and
-   two articles competing for one query split the ranking between them instead
-   of winning it.
+   The same calculation or question for a different audience (home versus
+   commercial) or with a different emphasis is still the same subject.
+   List the main search first. A subject is refused in code when its first
+   keyword, or more than half of its keywords, is already spoken for —
+   counting the same query with words added or dropped — because two articles
+   competing for one query split the ranking between them instead of winning it.
 2. **A real question someone asks.** Write for a person with a decision to make,
    not for a search engine. "How to size an inverter for a workshop with a
    compressor" beats "everything about inverters".
